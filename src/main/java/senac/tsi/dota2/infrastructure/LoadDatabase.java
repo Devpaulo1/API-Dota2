@@ -42,9 +42,9 @@ public class LoadDatabase {
                 List<Hero> heroes = mapper.readValue(heroResponse.body(), new TypeReference<List<Hero>>() {});
 
                 heroRepository.saveAll(heroes);
-                log.info("✅ " + heroes.size() + " Heróis salvos do OpenDota.");
+                log.info( heroes.size() + " Heróis salvos do OpenDota.");
             } catch (Exception e) {
-                log.error("❌ Erro ao buscar Heróis: " + e.getMessage());
+                log.error("Erro ao buscar Heróis: " + e.getMessage());
             }
 
             // ==========================================
@@ -66,9 +66,9 @@ public class LoadDatabase {
                 List<Team> topTeams = teams.size() > 50 ? teams.subList(0, 50) : teams;
 
                 teamRepository.saveAll(topTeams);
-                log.info("✅ " + topTeams.size() + " Times salvos do OpenDota.");
+                log.info(topTeams.size() + " Times salvos do OpenDota.");
             } catch (Exception e) {
-                log.error("❌ Erro ao buscar Times: " + e.getMessage());
+                log.error("Erro ao buscar Times: " + e.getMessage());
             }
         };
     }
