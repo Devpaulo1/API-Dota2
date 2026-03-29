@@ -8,8 +8,10 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import senac.tsi.dota2.entities.Hero;
+import senac.tsi.dota2.entities.Player;
 import senac.tsi.dota2.entities.Team;
 import senac.tsi.dota2.repositories.HeroRepository;
+import senac.tsi.dota2.repositories.PlayerRepository;
 import senac.tsi.dota2.repositories.TeamRepository;
 
 import java.net.URI;
@@ -24,7 +26,7 @@ public class LoadDatabase {
     private static final Logger log = LoggerFactory.getLogger(LoadDatabase.class);
 
     @Bean
-    CommandLineRunner initDatabase(HeroRepository heroRepository, TeamRepository teamRepository) {
+    CommandLineRunner initDatabase(HeroRepository heroRepository, TeamRepository teamRepository, PlayerRepository playerRepository) {
         return args -> {
             HttpClient client = HttpClient.newHttpClient();
             ObjectMapper mapper = new ObjectMapper();
@@ -47,9 +49,8 @@ public class LoadDatabase {
                 log.error("Erro ao buscar Heróis: " + e.getMessage());
             }
 
-            // ==========================================
-            // 2. CARREGANDO OS TIMES (O Mesmo Padrão!)
-            // ==========================================
+
+            List<Team> topTeams = null; // Declaramos aqui fora para poder usar no Passo 3
             try {
                 HttpRequest teamRequest = HttpRequest.newBuilder()
                         .uri(URI.create("https://api.opendota.com/api/teams"))
@@ -59,16 +60,37 @@ public class LoadDatabase {
                 HttpResponse<String> teamResponse = client.send(teamRequest, HttpResponse.BodyHandlers.ofString());
                 List<Team> teams = mapper.readValue(teamResponse.body(), new TypeReference<List<Team>>() {});
 
-                // O TRUQUE AQUI: Removemos os times que vêm em branco da API para o banco não recusar a lista
                 teams.removeIf(t -> t.getId() == null || t.getName() == null || t.getName().trim().isEmpty());
-
-                // Pegamos só os 50 primeiros para não demorar a ligar o projeto
-                List<Team> topTeams = teams.size() > 50 ? teams.subList(0, 50) : teams;
+                topTeams = teams.size() > 50 ? teams.subList(0, 50) : teams;
 
                 teamRepository.saveAll(topTeams);
                 log.info(topTeams.size() + " Times salvos do OpenDota.");
             } catch (Exception e) {
                 log.error("Erro ao buscar Times: " + e.getMessage());
+            }
+
+
+            // 3. CARREGANDO JOGADORES DE TESTE (Mock)
+            if (topTeams != null && !topTeams.isEmpty()) {
+                log.info("Iniciando vínculo de Jogadores aos Times baixados...");
+
+                // Pega os dois primeiros times que vieram da API para não dar erro
+                Team time1 = topTeams.get(0);
+                Team time2 = topTeams.size() > 1 ? topTeams.get(1) : time1;
+
+                Player p1 = new Player();
+                p1.setNickname("KillRockts");
+                p1.setRealName("Paulo");
+                p1.setTeam(time1); // Vincula ao primeiro time real da API!
+                playerRepository.save(p1);
+
+                Player p2 = new Player();
+                p2.setNickname("GamerX");
+                p2.setRealName("Carlos Eduardo");
+                p2.setTeam(time2); // Vincula ao segundo time real da API!
+                playerRepository.save(p2);
+
+                log.info("2 Jogadores criados e vinculados aos times reais com sucesso!");
             }
         };
     }

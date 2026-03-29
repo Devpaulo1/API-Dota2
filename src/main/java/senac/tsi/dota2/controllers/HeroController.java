@@ -4,7 +4,13 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import org.springframework.http.HttpStatus;
+import jakarta.validation.Valid;
+import org.springdoc.core.annotations.ParameterObject;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PagedResourcesAssembler;
+import org.springframework.hateoas.EntityModel;
+import org.springframework.hateoas.PagedModel;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import senac.tsi.dota2.entities.Hero;
@@ -12,112 +18,126 @@ import senac.tsi.dota2.exceptions.HeroNotFoundException;
 import senac.tsi.dota2.repositories.HeroRepository;
 
 import java.net.URI;
-import java.util.List;
 
+import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.linkTo;
+import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.methodOn;
 
-/**
- * ============================================================================
- * PROJETO: Dota 2 REST API - Senac TSI
- * ============================================================================
- * * HISTÓRICO E ARQUITETURA (Até o Dia 2):
- * * 1. O Molde e o Banco de Dados (Entity e Repository):
- * - Criação da entidade Hero mapeando os dados para o padrão Java.
- * - Uso do Jackson 3 (@JsonProperty e @JsonIgnoreProperties) para traduzir
- * o JSON original em inglês da API oficial do jogo.
- * - Configuração do H2 Database (Banco em memória) gerenciado pelo Spring Data JPA.
- * * 2. Carga Inicial de Dados (Preloading):
- * - Implementação da classe LoadDatabase na camada de Infrastructure.
- * - Uso do HttpClient nativo do Java 25 para consumir a OpenDota API
- * (/api/heroes) no momento de inicialização (Startup) do servidor.
- * - Salvamento automático de mais de 120 heróis oficiais no banco local.
- * * 3. Tratamento de Erros e Segurança (Exceptions):
- * - Implementação do GlobalErrorAdvice (@RestControllerAdvice) funcionando
- * como um "para-raios" para a aplicação inteira.
- * - Criação da HeroNotFoundException para interceptar buscas inválidas e
- * garantir o retorno do Status HTTP 404 (Not Found), evitando o Erro 500.
- * * 4. Documentação Viva (Swagger / OpenAPI):
- * - Configuração do springdoc-openapi no pom.xml e criação do OpenApiConfig.
- * - Uso das anotações @Tag, @Operation e @ApiResponse no Controller para
- * gerar uma interface web interativa de testes.
- * * 5. O Controlador RESTful (Richardson Maturity Model - Nível 2):
- * - Construção do CRUD completo usando ResponseEntity para controle rigoroso
- * dos Status HTTP, padrão exigido pelo mercado:
- * -> GET    : Listar todos (200 OK)
- * -> GET    : Buscar por ID (200 OK ou 404 Not Found)
- * -> POST   : Criar novo (201 Created)
- * -> PUT    : Atualizar existente (200 OK ou 201 Created)
- * -> DELETE : Remover do banco (204 No Content ou 404 Not Found)
- * ============================================================================
- */
-@Tag(name = "Heroes", description = "Rotas para gerenciar os Heróis do Dota 2")
+@Tag(name = "Heroes", description = "Routes to manage Dota 2 Heroes")
 @RestController
 @RequestMapping("/api/heroes")
 public class HeroController {
 
     private final HeroRepository repository;
+    private final PagedResourcesAssembler<Hero> pagedResourcesAssembler;
 
-    public HeroController(HeroRepository repository) {
+    public HeroController(HeroRepository repository, PagedResourcesAssembler<Hero> pagedResourcesAssembler) {
         this.repository = repository;
+        this.pagedResourcesAssembler = pagedResourcesAssembler;
     }
 
-    @Operation(summary = "Listar todos os heróis", description = "Retorna a lista completa de heróis carregados da OpenDota API.")
+    @Operation(summary = "Get all heroes (Paginated)", description = "Returns the complete list of heroes with HATEOAS links and pagination.")
     @GetMapping
-    @ResponseStatus(HttpStatus.OK)
-    public List<Hero> getAllHeroes() {
-        return repository.findAll();
+    public ResponseEntity<PagedModel<EntityModel<Hero>>> getAllHeroes(@ParameterObject Pageable pageable) {
+        Page<Hero> heroesPage = repository.findAll(pageable);
+
+        PagedModel<EntityModel<Hero>> pagedModel = pagedResourcesAssembler.toModel(heroesPage, hero ->
+                EntityModel.of(hero,
+                        linkTo(methodOn(HeroController.class).getHeroById(hero.getId())).withSelfRel(),
+                        linkTo(methodOn(HeroController.class).getAllHeroes(pageable)).withRel("heroes")
+                ));
+
+        return ResponseEntity.ok(pagedModel);
     }
 
-    @Operation(summary = "Buscar herói por ID", description = "Busca um herói específico. Retorna 404 Not Found se o ID não existir.")
+    @Operation(summary = "Filter by Attack Type", description = "Finds heroes by attack type (Melee/Ranged) with pagination.")
+    @GetMapping("/filter/attack-type")
+    public ResponseEntity<PagedModel<EntityModel<Hero>>> getHeroesByAttackType(
+            @RequestParam Hero.AttackType type,
+            @ParameterObject Pageable pageable) {
+
+        Page<Hero> heroesPage = repository.findByAttackType(type, pageable);
+
+        PagedModel<EntityModel<Hero>> pagedModel = pagedResourcesAssembler.toModel(heroesPage, hero ->
+                EntityModel.of(hero,
+                        linkTo(methodOn(HeroController.class).getHeroById(hero.getId())).withSelfRel(),
+                        linkTo(methodOn(HeroController.class).getAllHeroes(pageable)).withRel("heroes")
+                ));
+
+        return ResponseEntity.ok(pagedModel);
+    }
+
+    @Operation(summary = "Get hero by ID", description = "Finds a specific hero. Returns 404 Not Found if the ID does not exist.")
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Herói encontrado com sucesso"),
-            @ApiResponse(responseCode = "404", description = "Herói não encontrado")
+            @ApiResponse(responseCode = "200", description = "Hero found successfully"),
+            @ApiResponse(responseCode = "404", description = "Hero not found")
     })
     @GetMapping("/{id}")
-    public Hero getHeroById(@PathVariable Long id) {
-        return repository.findById(id)
+    public ResponseEntity<EntityModel<Hero>> getHeroById(@PathVariable Long id) {
+        Hero hero = repository.findById(id)
                 .orElseThrow(() -> new HeroNotFoundException(id));
+
+        EntityModel<Hero> entityModel = EntityModel.of(hero,
+                linkTo(methodOn(HeroController.class).getHeroById(id)).withSelfRel(),
+                linkTo(methodOn(HeroController.class).getAllHeroes(Pageable.unpaged())).withRel("heroes"));
+
+        return ResponseEntity.ok(entityModel);
     }
 
-    @Operation(summary = "Criar um novo herói", description = "Adiciona um herói customizado ao banco de dados.")
+    @Operation(summary = "Create a new hero", description = "Adds a custom hero to the database.")
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "201", description = "Herói criado com sucesso")
+            @ApiResponse(responseCode = "201", description = "Hero created successfully")
     })
     @PostMapping
-    public ResponseEntity<Hero> createHero(@RequestBody Hero newHero) {
+    public ResponseEntity<EntityModel<Hero>> createHero(@Valid @RequestBody Hero newHero) {
         Hero savedHero = repository.save(newHero);
+
+        EntityModel<Hero> entityModel = EntityModel.of(savedHero,
+                linkTo(methodOn(HeroController.class).getHeroById(savedHero.getId())).withSelfRel(),
+                linkTo(methodOn(HeroController.class).getAllHeroes(Pageable.unpaged())).withRel("heroes"));
+
         return ResponseEntity
                 .created(URI.create("/api/heroes/" + savedHero.getId()))
-                .body(savedHero);
+                .body(entityModel);
     }
 
-    @Operation(summary = "Atualizar um herói", description = "Atualiza os dados de um herói existente. Se o ID não existir, ele cria um novo.")
+    @Operation(summary = "Update a hero", description = "Updates an existing hero's data. If the ID does not exist, it creates a new one.")
     @PutMapping("/{id}")
-    public ResponseEntity<Hero> updateHero(@PathVariable Long id, @RequestBody Hero updatedHero) {
+    public ResponseEntity<EntityModel<Hero>> updateHero(@PathVariable Long id, @Valid @RequestBody Hero updatedHero) {
         return repository.findById(id)
                 .map(hero -> {
                     hero.setLocalizedName(updatedHero.getLocalizedName());
                     hero.setAttackType(updatedHero.getAttackType());
-                    return ResponseEntity.ok(repository.save(hero));
+                    Hero savedHero = repository.save(hero);
+
+                    EntityModel<Hero> entityModel = EntityModel.of(savedHero,
+                            linkTo(methodOn(HeroController.class).getHeroById(savedHero.getId())).withSelfRel(),
+                            linkTo(methodOn(HeroController.class).getAllHeroes(Pageable.unpaged())).withRel("heroes"));
+
+                    return ResponseEntity.ok(entityModel);
                 })
                 .orElseGet(() -> {
                     updatedHero.setId(id);
+                    Hero savedHero = repository.save(updatedHero);
+
+                    EntityModel<Hero> entityModel = EntityModel.of(savedHero,
+                            linkTo(methodOn(HeroController.class).getHeroById(savedHero.getId())).withSelfRel(),
+                            linkTo(methodOn(HeroController.class).getAllHeroes(Pageable.unpaged())).withRel("heroes"));
+
                     return ResponseEntity
                             .created(URI.create("/api/heroes/" + id))
-                            .body(repository.save(updatedHero));
+                            .body(entityModel);
                 });
     }
 
-    @Operation(summary = "Deletar um herói", description = "Remove um herói do banco de dados local pelo ID.")
+    @Operation(summary = "Delete a hero", description = "Removes a hero from the local database by ID.")
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "204", description = "Herói deletado com sucesso (Sem conteúdo no retorno)"),
-            @ApiResponse(responseCode = "404", description = "Herói não encontrado")
+            @ApiResponse(responseCode = "204", description = "Hero deleted successfully (No content returned)"),
+            @ApiResponse(responseCode = "404", description = "Hero not found")
     })
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteHero(@PathVariable Long id) {
         Hero hero = repository.findById(id).orElseThrow(() -> new HeroNotFoundException(id));
-
         repository.delete(hero);
-
         return ResponseEntity.noContent().build();
     }
 }
