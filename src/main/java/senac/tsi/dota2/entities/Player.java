@@ -1,9 +1,12 @@
 package senac.tsi.dota2.entities;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 
 @Entity
+@Schema(description = "Entity representing a professional player",
+        example = "{\"nickname\": \"PauloProPlayer\", \"realName\": \"Paulo da Silva\", \"team\": {\"team_id\": 7819701}}")
 public class Player {
 
     @Id

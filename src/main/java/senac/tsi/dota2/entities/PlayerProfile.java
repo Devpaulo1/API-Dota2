@@ -1,11 +1,14 @@
 package senac.tsi.dota2.entities;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.persistence.*;
 import lombok.Data;
 
 @Data
 @Entity
+@Schema(description = "Detailed biographical profile of the player",
+        example = "{\"biography\": \"Estudante de TSI e Pro Player\", \"twitterHandle\": \"@paulo_dota\", \"totalEarnings\": 500.0, \"player\": {\"id\": 1}}")
 public class PlayerProfile {
 
     @Id

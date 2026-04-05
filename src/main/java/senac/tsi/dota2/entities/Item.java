@@ -1,6 +1,7 @@
 package senac.tsi.dota2.entities;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -11,6 +12,8 @@ import java.util.List;
 
 @Data
 @Entity
+@Schema(description = "Entity representing a game item",
+        example = "{\"name\": \"Blink Dagger\", \"cost\": 2250, \"description\": \"Teleport item\"}")
 public class Item {
 
     @Id
