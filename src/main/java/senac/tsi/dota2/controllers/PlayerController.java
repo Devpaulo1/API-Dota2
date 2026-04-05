@@ -100,34 +100,40 @@ public class PlayerController {
                 .body(entityModel);
     }
 
-    @Operation(summary = "Update a player")
+    @Operation(summary = "Update a player (Upsert)")
     @PutMapping("/{id}")
     public ResponseEntity<EntityModel<Player>> updatePlayer(@PathVariable Long id, @Valid @RequestBody Player updatedPlayer) {
         return repository.findById(id)
                 .map(player -> {
+                    // 1. SE EXISTIR: Atualiza os dados (200 OK)
                     player.setNickname(updatedPlayer.getNickname());
                     player.setRealName(updatedPlayer.getRealName());
-                    player.setTeam(updatedPlayer.getTeam()); // Atualiza o relacionamento com o time
+
+                    // Atualiza o time se for enviado no JSON
+                    if (updatedPlayer.getTeam() != null) {
+                        player.setTeam(updatedPlayer.getTeam());
+                    }
+
                     Player savedPlayer = repository.save(player);
-
-                    EntityModel<Player> entityModel = EntityModel.of(savedPlayer,
-                            linkTo(methodOn(PlayerController.class).getPlayerById(savedPlayer.getId())).withSelfRel(),
-                            linkTo(methodOn(PlayerController.class).getAllPlayers(Pageable.unpaged())).withRel("players"));
-
-                    return ResponseEntity.ok(entityModel);
+                    return ResponseEntity.ok(createEntityModel(savedPlayer));
                 })
                 .orElseGet(() -> {
-                    updatedPlayer.setId(id);
+                    // 2. SE NÃO EXISTIR: Cria um novo (201 Created)
+                    // Limpamos o ID para o Hibernate usar a sequência IDENTITY
+                    updatedPlayer.setId(null);
                     Player savedPlayer = repository.save(updatedPlayer);
 
-                    EntityModel<Player> entityModel = EntityModel.of(savedPlayer,
-                            linkTo(methodOn(PlayerController.class).getPlayerById(savedPlayer.getId())).withSelfRel(),
-                            linkTo(methodOn(PlayerController.class).getAllPlayers(Pageable.unpaged())).withRel("players"));
-
                     return ResponseEntity
-                            .created(URI.create("/api/players/" + id))
-                            .body(entityModel);
+                            .created(URI.create("/api/players/" + savedPlayer.getId()))
+                            .body(createEntityModel(savedPlayer));
                 });
+    }
+
+    // Certifique-se de ter o método auxiliar de links (HATEOAS)
+    private EntityModel<Player> createEntityModel(Player player) {
+        return EntityModel.of(player,
+                linkTo(methodOn(PlayerController.class).getPlayerById(player.getId())).withSelfRel(),
+                linkTo(methodOn(PlayerController.class).getAllPlayers(Pageable.unpaged())).withRel("players"));
     }
 
     @Operation(summary = "Delete a player")

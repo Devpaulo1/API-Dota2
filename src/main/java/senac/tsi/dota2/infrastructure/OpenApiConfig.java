@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.OpenAPIDefinition;
 import io.swagger.v3.oas.annotations.info.Contact;
 import io.swagger.v3.oas.annotations.info.Info;
 import io.swagger.v3.oas.annotations.info.License;
+import io.swagger.v3.oas.annotations.servers.Server;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
@@ -20,7 +21,12 @@ import org.springframework.context.annotation.Configuration;
                         name = "OpenDota API",
                         url = "https://docs.opendota.com/"
                 )
-        )
+        ),
+        servers = {
+                @Server(url = "http://localhost:8080", description = "Servidor Local (Desenvolvimento)"),
+                @Server(url = "https://api-dota2.onrender.com", description = "Servidor de Produção (Render)")
+
+        }
 )
 public class OpenApiConfig {
 

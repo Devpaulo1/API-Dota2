@@ -19,4 +19,21 @@ public class GlobalErrorAdvice {
     public String teamNotFoundHandler(TeamNotFoundException ex) {
         return ex.getMessage();
     }
+    @ExceptionHandler(PlayerNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public String playerNotFoundHandler(PlayerNotFoundException ex) {
+        return ex.getMessage();
+    }
+
+    @ExceptionHandler(PlayerProfileNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public String playerProfileNotFoundHandler(PlayerProfileNotFoundException ex) {
+        return ex.getMessage();
+    }
+
+    @ExceptionHandler(ItemNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public String itemNotFoundHandler(ItemNotFoundException ex) {
+        return ex.getMessage();
+    }
 }

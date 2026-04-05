@@ -100,35 +100,41 @@ public class PlayerProfileController {
                 .body(entityModel);
     }
 
-    @Operation(summary = "Update a profile")
+    @Operation(summary = "Update a profile (Upsert)")
     @PutMapping("/{id}")
     public ResponseEntity<EntityModel<PlayerProfile>> updateProfile(@PathVariable Long id, @Valid @RequestBody PlayerProfile updatedProfile) {
         return repository.findById(id)
                 .map(profile -> {
+                    // 1. SE EXISTIR: Atualiza os dados (200 OK)
                     profile.setBiography(updatedProfile.getBiography());
                     profile.setTwitterHandle(updatedProfile.getTwitterHandle());
                     profile.setTotalEarnings(updatedProfile.getTotalEarnings());
-                    profile.setPlayer(updatedProfile.getPlayer()); // Atualiza o vínculo com o jogador
+
+                    // Mantém ou atualiza o vínculo com o jogador
+                    if (updatedProfile.getPlayer() != null) {
+                        profile.setPlayer(updatedProfile.getPlayer());
+                    }
+
                     PlayerProfile savedProfile = repository.save(profile);
-
-                    EntityModel<PlayerProfile> entityModel = EntityModel.of(savedProfile,
-                            linkTo(methodOn(PlayerProfileController.class).getProfileById(savedProfile.getId())).withSelfRel(),
-                            linkTo(methodOn(PlayerProfileController.class).getAllProfiles(Pageable.unpaged())).withRel("player-profiles"));
-
-                    return ResponseEntity.ok(entityModel);
+                    return ResponseEntity.ok(createEntityModel(savedProfile));
                 })
                 .orElseGet(() -> {
-                    updatedProfile.setId(id);
+                    // 2. SE NÃO EXISTIR: Cria um novo (201 Created)
+                    // Limpamos o ID para o Hibernate usar a sequência automática
+                    updatedProfile.setId(null);
                     PlayerProfile savedProfile = repository.save(updatedProfile);
 
-                    EntityModel<PlayerProfile> entityModel = EntityModel.of(savedProfile,
-                            linkTo(methodOn(PlayerProfileController.class).getProfileById(savedProfile.getId())).withSelfRel(),
-                            linkTo(methodOn(PlayerProfileController.class).getAllProfiles(Pageable.unpaged())).withRel("player-profiles"));
-
                     return ResponseEntity
-                            .created(URI.create("/api/player-profiles/" + id))
-                            .body(entityModel);
+                            .created(URI.create("/api/profiles/" + savedProfile.getId()))
+                            .body(createEntityModel(savedProfile));
                 });
+    }
+
+    // Método auxiliar para os links HATEOAS do Perfil
+    private EntityModel<PlayerProfile> createEntityModel(PlayerProfile profile) {
+        return EntityModel.of(profile,
+                linkTo(methodOn(PlayerProfileController.class).getProfileById(profile.getId())).withSelfRel(),
+                linkTo(methodOn(PlayerProfileController.class).getAllProfiles(Pageable.unpaged())).withRel("profiles"));
     }
 
     @Operation(summary = "Delete a profile")
