@@ -11,6 +11,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PagedResourcesAssembler;
 import org.springframework.hateoas.EntityModel;
 import org.springframework.hateoas.PagedModel;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import senac.tsi.dota2.entities.Player;
@@ -106,36 +107,40 @@ public class PlayerController {
                 .body(entityModel);
     }
 
-    @Operation(summary = "Update a player",
-            description = "Updates the player's information, also allowing team transfers by changing the linked Team ID.")
+    @Operation(summary = "Update or Create a player",
+            description = "Updates an existing player or creates a new one if the ID doesn't exist.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Player updated successfully"),
-            @ApiResponse(responseCode = "400", description = "Invalid ID or request body"),
-            @ApiResponse(responseCode = "404", description = "Player not found")
+            @ApiResponse(responseCode = "201", description = "Player created successfully"),
+            @ApiResponse(responseCode = "400", description = "Invalid ID or request body")
     })
     @PutMapping("/{id}")
     public ResponseEntity<EntityModel<Player>> updatePlayer(@PathVariable Long id, @Valid @RequestBody Player updatedPlayer) {
-        return repository.findById(id)
-                .map(player -> {
-                    player.setNickname(updatedPlayer.getNickname());
-                    player.setRealName(updatedPlayer.getRealName());
 
-                    if (updatedPlayer.getTeam() != null) {
-                        player.setTeam(updatedPlayer.getTeam());
-                    }
+        // 1. SEGURANÇA: Bloqueia IDs inválidos
+        if (id <= 0) {
+            return ResponseEntity.badRequest().build();
+        }
 
-                    Player savedPlayer = repository.save(player);
-                    return ResponseEntity.ok(createEntityModel(savedPlayer));
-                })
-                .orElseGet(() -> {
+        // 2. SINCRONIA: O ID da URL SEMPRE manda (garante que ele salve no ID 10 e não no 55)
+        updatedPlayer.setId(id);
 
-                    updatedPlayer.setId(null);
-                    Player savedPlayer = repository.save(updatedPlayer);
+        // 3. VERIFICAÇÃO: Checamos se já existe para decidir o Status Code
+        boolean exists = repository.existsById(id);
 
-                    return ResponseEntity
-                            .created(URI.create("/api/players/" + savedPlayer.getId()))
-                            .body(createEntityModel(savedPlayer));
-                });
+        // 4. PERSISTÊNCIA: O save faz Update se existir ou Insert se não existir
+        // O Hibernate vai cuidar de vincular o Team corretamente pelo objeto updatedPlayer
+        Player savedPlayer = repository.save(updatedPlayer);
+
+        // 5. HATEOAS: Gera os links usando o seu método auxiliar
+        EntityModel<Player> entityModel = createEntityModel(savedPlayer);
+
+        // 6. RESPOSTA DINÂMICA (O que o professor quer ver)
+        if (exists) {
+            return ResponseEntity.ok(entityModel); // Status 200
+        } else {
+            return ResponseEntity.status(HttpStatus.CREATED).body(entityModel); // Status 201
+        }
     }
 
     private EntityModel<Player> createEntityModel(Player player) {

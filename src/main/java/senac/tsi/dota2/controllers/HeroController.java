@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.persistence.EntityNotFoundException;
 import jakarta.validation.Valid;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Page;
@@ -11,6 +12,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PagedResourcesAssembler;
 import org.springframework.hateoas.EntityModel;
 import org.springframework.hateoas.PagedModel;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import senac.tsi.dota2.entities.Hero;
@@ -87,14 +89,27 @@ public class HeroController {
     }
 
     @Operation(summary = "Create a new hero",
-            description = "manually registers a new hero into the database.")
+            description = "Manually registers a new hero into the database. ID must be greater than zero and unique.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Hero Created successfully"),
-            @ApiResponse(responseCode = "400", description = "Invalid request data or validation failed"),
-            @ApiResponse(responseCode = "409", description = "Conflict: Hero already exists")
+            @ApiResponse(responseCode = "400", description = "Invalid request data: ID must be > 0"),
+            @ApiResponse(responseCode = "409", description = "Conflict: Hero ID already exists")
     })
     @PostMapping
-    public ResponseEntity<EntityModel<Hero>> createHero(@Valid @RequestBody Hero newHero) {
+    public ResponseEntity<?> createHero(@Valid @RequestBody Hero newHero) {
+
+        // TRAVA 1: Impedir IDs 0 ou negativos (o herói -1 que você criou)
+        if (newHero.getId() != null && newHero.getId() <= 0) {
+            return ResponseEntity.badRequest().body("Hero ID must be greater than zero.");
+        }
+
+        // TRAVA 2: Impedir sobrescrever o herói (o erro de apagar o Herói ID 1)
+        if (repository.existsById(newHero.getId())) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body("Conflict: Hero with ID " + newHero.getId() + " already exists. Use PUT to update.");
+        }
+
+        // Se passou pelas travas, salvamos normalmente
         Hero savedHero = repository.save(newHero);
 
         EntityModel<Hero> entityModel = EntityModel.of(savedHero,
@@ -106,41 +121,44 @@ public class HeroController {
                 .body(entityModel);
     }
 
-    @Operation(summary = "Update a hero (Equip Item)",
-            description = "Updates hero data and manages their inventory, allowing the addition or removal of items (Many-to-Many relationship)")
+    @Operation(summary = "Update or Create a hero",
+            description = "Updates an existing hero or creates a new one if the ID does not exist.")
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Updated successfully"),
-            @ApiResponse(responseCode = "400", description = "Invalid ID or request body"),
-            @ApiResponse(responseCode = "404", description = "Hero not found")
+            @ApiResponse(responseCode = "200", description = "Hero updated successfully"),
+            @ApiResponse(responseCode = "201", description = "Hero created successfully (Save or Update)"),
+            @ApiResponse(responseCode = "400", description = "Invalid ID or request data")
     })
     @PutMapping("/{id}")
     public ResponseEntity<EntityModel<Hero>> updateHero(@PathVariable Long id, @Valid @RequestBody Hero updatedHero) {
-        return repository.findById(id)
-                .map(hero -> {
-                    hero.setLocalizedName(updatedHero.getLocalizedName());
-                    hero.setAttackType(updatedHero.getAttackType());
-                    Hero savedHero = repository.save(hero);
 
-                    EntityModel<Hero> entityModel = EntityModel.of(savedHero,
-                            linkTo(methodOn(HeroController.class).getHeroById(savedHero.getId())).withSelfRel(),
-                            linkTo(methodOn(HeroController.class).getAllHeroes(Pageable.unpaged())).withRel("heroes"));
+        // 1. SEGURANÇA: Impede IDs 0 ou negativos
+        if (id <= 0) {
+            return ResponseEntity.badRequest().build();
+        }
 
-                    return ResponseEntity.ok(entityModel);
-                })
-                .orElseGet(() -> {
-                    updatedHero.setId(id);
-                    Hero savedHero = repository.save(updatedHero);
+        // 2. SINCRONIA: O ID da URL sempre manda (esmaga o 999 do body)
+        updatedHero.setId(id);
 
-                    EntityModel<Hero> entityModel = EntityModel.of(savedHero,
-                            linkTo(methodOn(HeroController.class).getHeroById(savedHero.getId())).withSelfRel(),
-                            linkTo(methodOn(HeroController.class).getAllHeroes(Pageable.unpaged())).withRel("heroes"));
+        // 3. REGRA DO PROFESSOR: Checa se existe para decidir o status final
+        boolean exists = repository.existsById(id);
 
-                    return ResponseEntity
-                            .created(URI.create("/api/heroes/" + id))
-                            .body(entityModel);
-                });
+        // 4. SALVAMENTO: O 'save' faz Update se existe ou Insert se não existe
+        Hero savedHero = repository.save(updatedHero);
+
+        // 5. HATEOAS: Gera os links obrigatórios do Nível 3
+        EntityModel<Hero> entityModel = EntityModel.of(savedHero,
+                linkTo(methodOn(HeroController.class).getHeroById(id)).withSelfRel(),
+                linkTo(methodOn(HeroController.class).getAllHeroes(Pageable.unpaged())).withRel("heroes"));
+
+        // 6. RESPOSTA DINÂMICA:
+        if (exists) {
+            // Se já existia, status 200 OK
+            return ResponseEntity.ok(entityModel);
+        } else {
+            // Se não existia e foi criado agora, status 201 Created
+            return ResponseEntity.status(HttpStatus.CREATED).body(entityModel);
+        }
     }
-
     @Operation(summary = "Delete a hero",
             description = "Permanently removes a hero from the system. Returns 204 (No Content) upon successful deletion.")
     @ApiResponses(value = {

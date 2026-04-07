@@ -11,6 +11,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PagedResourcesAssembler;
 import org.springframework.hateoas.EntityModel;
 import org.springframework.hateoas.PagedModel;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import senac.tsi.dota2.entities.Team;
@@ -108,40 +109,41 @@ public class TeamController {
                 .body(entityModel);
     }
 
-    @Operation(summary = "Update a team",
-            description = "Overwrites the data (name, tag, rating) of an existing team.")
+    @Operation(summary = "Update or Create a team",
+            description = "Updates an existing team or creates a new one if the ID doesn't exist.")
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Team Updated successfully"),
-            @ApiResponse(responseCode = "400", description = "Invalid ID or request body"),
-            @ApiResponse(responseCode = "404", description = "Team not found")
+            @ApiResponse(responseCode = "200", description = "Team updated successfully"),
+            @ApiResponse(responseCode = "201", description = "Team created successfully"),
+            @ApiResponse(responseCode = "400", description = "Invalid ID or request body")
     })
     @PutMapping("/{id}")
     public ResponseEntity<EntityModel<Team>> updateTeam(@PathVariable("id") Long id, @Valid @RequestBody Team updatedTeam) {
-        return repository.findById(id)
-                .map(team -> {
-                    team.setName(updatedTeam.getName());
-                    team.setTag(updatedTeam.getTag());
-                    team.setRating(updatedTeam.getRating());
-                    Team savedTeam = repository.save(team);
 
-                    EntityModel<Team> entityModel = EntityModel.of(savedTeam,
-                            linkTo(methodOn(TeamController.class).getTeamById(savedTeam.getId())).withSelfRel(),
-                            linkTo(methodOn(TeamController.class).getAllTeams(Pageable.unpaged())).withRel("teams"));
+        // 1. SEGURANÇA: Bloqueia IDs inválidos
+        if (id <= 0) {
+            return ResponseEntity.badRequest().build();
+        }
 
-                    return ResponseEntity.ok(entityModel); // 200 OK
-                })
-                .orElseGet(() -> {
-                    updatedTeam.setId(id);
-                    Team savedTeam = repository.save(updatedTeam);
+        // 2. SINCRONIA: O ID da URL manda
+        updatedTeam.setId(id);
 
-                    EntityModel<Team> entityModel = EntityModel.of(savedTeam,
-                            linkTo(methodOn(TeamController.class).getTeamById(savedTeam.getId())).withSelfRel(),
-                            linkTo(methodOn(TeamController.class).getAllTeams(Pageable.unpaged())).withRel("teams"));
+        // 3. VERIFICAÇÃO: Checamos a existência
+        boolean exists = repository.existsById(id);
 
-                    return ResponseEntity
-                            .created(URI.create("/api/teams/" + id))
-                            .body(entityModel); // 201 Created
-                });
+        // 4. PERSISTÊNCIA: Save faz tudo (Update ou Insert)
+        Team savedTeam = repository.save(updatedTeam);
+
+        // 5. HATEOAS: Gerando links
+        EntityModel<Team> entityModel = EntityModel.of(savedTeam,
+                linkTo(methodOn(TeamController.class).getTeamById(id)).withSelfRel(),
+                linkTo(methodOn(TeamController.class).getAllTeams(Pageable.unpaged())).withRel("teams"));
+
+        // 6. RESPOSTA DINÂMICA
+        if (exists) {
+            return ResponseEntity.ok(entityModel); // 200 OK
+        } else {
+            return ResponseEntity.status(HttpStatus.CREATED).body(entityModel); // 201 Created
+        }
     }
 
     @Operation(summary = "Delete a team",

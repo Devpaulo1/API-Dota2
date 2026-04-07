@@ -36,7 +36,7 @@ public class Player {
     @Schema(description = "The team the player is currently signed to")
     private Team team;
 
-    @OneToOne(mappedBy = "player", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @OneToOne(mappedBy = "player", cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
     @Schema(description = "Player's biographical profile")
     private PlayerProfile profile;
 

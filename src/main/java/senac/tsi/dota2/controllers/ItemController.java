@@ -11,6 +11,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PagedResourcesAssembler;
 import org.springframework.hateoas.EntityModel;
 import org.springframework.hateoas.PagedModel;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import senac.tsi.dota2.entities.Item;
@@ -81,33 +82,38 @@ public class ItemController {
                 .body(createEntityModel(savedItem));
     }
 
-    @Operation(summary = "Update an item",
-            description = "Updates the name, cost, or effects of an existing item.")
+    @Operation(summary = "Update or Create an item",
+            description = "Updates an item if it exists or creates a new one at the specified ID.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Item Updated successfully"),
-            @ApiResponse(responseCode = "400", description = "Invalid ID or request body"),
-            @ApiResponse(responseCode = "404", description = "Item not found")
+            @ApiResponse(responseCode = "201", description = "Item Created successfully (New Resource)"),
+            @ApiResponse(responseCode = "400", description = "Invalid ID or request body")
     })
     @PutMapping("/{id}")
     public ResponseEntity<EntityModel<Item>> updateItem(@PathVariable Long id, @Valid @RequestBody Item updatedItem) {
-        return repository.findById(id)
-                .map(item -> {
-                    // 1. SE EXISTIR: Atualiza os dados (Retorna 200 OK)
-                    item.setName(updatedItem.getName());
-                    item.setCost(updatedItem.getCost());
-                    item.setDescription(updatedItem.getDescription());
-                    Item savedItem = repository.save(item);
-                    return ResponseEntity.ok(createEntityModel(savedItem));
-                })
-                .orElseGet(() -> {
-                    // 2. SE NÃO EXISTIR: Cria um novo (Retorna 201 Created)
-                    // Importante: limpamos o ID para o banco IDENTITY gerar o próximo corretamente
-                    updatedItem.setId(null);
-                    Item savedItem = repository.save(updatedItem);
-                    return ResponseEntity
-                            .created(URI.create("/api/items/" + savedItem.getId()))
-                            .body(createEntityModel(savedItem));
-                });
+
+        // 1. SEGURANÇA: Bloqueia IDs inválidos
+        if (id <= 0) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        // 2. SINCRONIA: O ID da URL SEMPRE manda no objeto
+        updatedItem.setId(id);
+
+        // 3. VERIFICAÇÃO: Checamos se ele já existe antes de salvar
+        boolean exists = repository.existsById(id);
+
+        // 4. SALVAMENTO: O save() fará Update (se id existe) ou Insert (se id é novo)
+        Item savedItem = repository.save(updatedItem);
+
+        // 5. RESPOSTA COM HATEOAS
+        EntityModel<Item> entityModel = createEntityModel(savedItem);
+
+        if (exists) {
+            return ResponseEntity.ok(entityModel); // Status 200
+        } else {
+            return ResponseEntity.status(HttpStatus.CREATED).body(entityModel); // Status 201
+        }
     }
 
     @Operation(summary = "Delete an item",

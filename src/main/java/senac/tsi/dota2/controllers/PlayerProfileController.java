@@ -11,8 +11,10 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PagedResourcesAssembler;
 import org.springframework.hateoas.EntityModel;
 import org.springframework.hateoas.PagedModel;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import senac.tsi.dota2.entities.Player;
 import senac.tsi.dota2.entities.PlayerProfile;
 import senac.tsi.dota2.exceptions.PlayerProfileNotFoundException;
 import senac.tsi.dota2.repositories.PlayerProfileRepository;
@@ -106,40 +108,40 @@ public class PlayerProfileController {
                 .body(entityModel);
     }
 
-    @Operation(summary = "Update a profile",
-            description = "Updates the statistics, biography, and Twitter handle of an existing profile.")
+    @Operation(summary = "Update or Create a profile",
+            description = "Updates an existing profile or creates a new one at the specified ID.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Profile updated successfully"),
-            @ApiResponse(responseCode = "400", description = "Invalid ID or request body"),
-            @ApiResponse(responseCode = "404", description = "Profile not found")
+            @ApiResponse(responseCode = "201", description = "Profile created successfully"),
+            @ApiResponse(responseCode = "400", description = "Invalid ID or request body")
     })
     @PutMapping("/{id}")
     public ResponseEntity<EntityModel<PlayerProfile>> updateProfile(@PathVariable Long id, @Valid @RequestBody PlayerProfile updatedProfile) {
-        return repository.findById(id)
-                .map(profile -> {
-                    // 1. SE EXISTIR: Atualiza os dados (200 OK)
-                    profile.setBiography(updatedProfile.getBiography());
-                    profile.setTwitterHandle(updatedProfile.getTwitterHandle());
-                    profile.setTotalEarnings(updatedProfile.getTotalEarnings());
 
-                    // Mantém ou atualiza o vínculo com o jogador
-                    if (updatedProfile.getPlayer() != null) {
-                        profile.setPlayer(updatedProfile.getPlayer());
-                    }
+        // 1. SEGURANÇA: Bloqueia IDs inválidos
+        if (id <= 0) {
+            return ResponseEntity.badRequest().build();
+        }
 
-                    PlayerProfile savedProfile = repository.save(profile);
-                    return ResponseEntity.ok(createEntityModel(savedProfile));
-                })
-                .orElseGet(() -> {
-                    // 2. SE NÃO EXISTIR: Cria um novo (201 Created)
-                    // Limpamos o ID para o Hibernate usar a sequência automática
-                    updatedProfile.setId(null);
-                    PlayerProfile savedProfile = repository.save(updatedProfile);
+        // 2. SINCRONIA: O ID da URL manda. Se o cara mandou 300, vai salvar no 300.
+        updatedProfile.setId(id);
 
-                    return ResponseEntity
-                            .created(URI.create("/api/profiles/" + savedProfile.getId()))
-                            .body(createEntityModel(savedProfile));
-                });
+        // 3. VERIFICAÇÃO: Checamos a existência antes de salvar
+        boolean exists = repository.existsById(id);
+
+        // 4. PERSISTÊNCIA: O save faz o trabalho pesado (Update ou Insert)
+        // O Hibernate já vai lidar com o vínculo do Player se ele vier no JSON
+        PlayerProfile savedProfile = repository.save(updatedProfile);
+
+        // 5. HATEOAS: Gera os links usando o seu método auxiliar
+        EntityModel<PlayerProfile> entityModel = createEntityModel(savedProfile);
+
+        // 6. RESPOSTA DINÂMICA (Padrão de aula)
+        if (exists) {
+            return ResponseEntity.ok(entityModel); // Retorna 200
+        } else {
+            return ResponseEntity.status(HttpStatus.CREATED).body(entityModel); // Retorna 201
+        }
     }
 
     // Método auxiliar para os links HATEOAS do Perfil
@@ -149,17 +151,24 @@ public class PlayerProfileController {
                 linkTo(methodOn(PlayerProfileController.class).getAllProfiles(Pageable.unpaged())).withRel("profiles"));
     }
 
-    @Operation(summary = "Delete a profile",
-            description = "Removes the detailed profile without deleting the base Player.")
-    @ApiResponses(value = {
-            @ApiResponse(responseCode = "204", description = "Profile deleted successfully"),
-            @ApiResponse(responseCode = "400", description = "Invalid ID format"),
-            @ApiResponse(responseCode = "404", description = "Profile not found")
-    })
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteProfile(@PathVariable Long id) {
-        PlayerProfile profile = repository.findById(id).orElseThrow(() -> new PlayerProfileNotFoundException(id));
+        // 1. Busca o perfil ou lança a exceção que você já criou
+        PlayerProfile profile = repository.findById(id)
+                .orElseThrow(() -> new PlayerProfileNotFoundException(id));
+
+        // 2. BUSCA O JOGADOR: Pegamos o jogador vinculado a este perfil
+        Player player = profile.getPlayer();
+
+        // 3. QUEBRA O VÍNCULO: Avisamos ao objeto Player que o perfil dele agora é NULL
+        if (player != null) {
+            player.setProfile(null);
+        }
+
+        // 4. DELETA: Agora sim, removemos do banco de dados
         repository.delete(profile);
+
+        // 5. Retorna 204 No Content
         return ResponseEntity.noContent().build();
     }
 }
