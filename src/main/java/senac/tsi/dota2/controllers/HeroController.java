@@ -35,7 +35,8 @@ public class HeroController {
         this.pagedResourcesAssembler = pagedResourcesAssembler;
     }
 
-    @Operation(summary = "Get all heroes (Paginated)", description = "Returns the complete list of heroes with HATEOAS links and pagination.")
+    @Operation(summary = "Get all heroes (Paginated)",
+            description = "Returns a paginated list of all registered heroes, including HATEOAS navigation links.")
     @GetMapping
     public ResponseEntity<PagedModel<EntityModel<Hero>>> getAllHeroes(@ParameterObject Pageable pageable) {
         Page<Hero> heroesPage = repository.findAll(pageable);
@@ -49,7 +50,8 @@ public class HeroController {
         return ResponseEntity.ok(pagedModel);
     }
 
-    @Operation(summary = "Filter by Attack Type", description = "Finds heroes by attack type (Melee/Ranged) with pagination.")
+    @Operation(summary = "Filter by Attack Type",
+            description = "Filters the list of heroes by attack type ('Melee' or 'Ranged'). Returns paginated results.")
     @GetMapping("/filter/attack-type")
     public ResponseEntity<PagedModel<EntityModel<Hero>>> getHeroesByAttackType(
             @RequestParam Hero.AttackType type,
@@ -66,7 +68,8 @@ public class HeroController {
         return ResponseEntity.ok(pagedModel);
     }
 
-    @Operation(summary = "Get hero by ID", description = "Finds a specific hero. Returns 404 Not Found if the ID does not exist.")
+    @Operation(summary = "Get hero by ID",
+            description = "Retrieves the details of a specific hero by their unique ID. Returns 404 if not found.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Hero found successfully"),
             @ApiResponse(responseCode = "404", description = "Hero not found")
@@ -83,7 +86,8 @@ public class HeroController {
         return ResponseEntity.ok(entityModel);
     }
 
-    @Operation(summary = "Create a new hero", description = "Adds a custom hero to the database.")
+    @Operation(summary = "Create a new hero",
+            description = "manually registers a new hero into the database.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Hero created successfully")
     })
@@ -100,7 +104,8 @@ public class HeroController {
                 .body(entityModel);
     }
 
-    @Operation(summary = "Update a hero", description = "Updates an existing hero's data. If the ID does not exist, it creates a new one.")
+    @Operation(summary = "Update a hero (Equip Item)",
+            description = "Updates hero data and manages their inventory, allowing the addition or removal of items (Many-to-Many relationship)")
     @PutMapping("/{id}")
     public ResponseEntity<EntityModel<Hero>> updateHero(@PathVariable Long id, @Valid @RequestBody Hero updatedHero) {
         return repository.findById(id)
@@ -129,7 +134,8 @@ public class HeroController {
                 });
     }
 
-    @Operation(summary = "Delete a hero", description = "Removes a hero from the local database by ID.")
+    @Operation(summary = "Delete a hero",
+            description = "Permanently removes a hero from the system. Returns 204 (No Content) upon successful deletion.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "204", description = "Hero deleted successfully (No content returned)"),
             @ApiResponse(responseCode = "404", description = "Hero not found")

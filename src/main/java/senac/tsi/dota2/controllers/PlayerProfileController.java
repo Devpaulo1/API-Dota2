@@ -35,7 +35,8 @@ public class PlayerProfileController {
         this.pagedResourcesAssembler = pagedResourcesAssembler;
     }
 
-    @Operation(summary = "Get all profiles (Paginated)", description = "Returns the complete list of player profiles with HATEOAS links.")
+    @Operation(summary = "Get all profiles (Paginated)",
+            description = "Lists the detailed profiles of all players, with pagination support.")
     @GetMapping
     public ResponseEntity<PagedModel<EntityModel<PlayerProfile>>> getAllProfiles(@ParameterObject Pageable pageable) {
         Page<PlayerProfile> profilesPage = repository.findAll(pageable);
@@ -49,7 +50,8 @@ public class PlayerProfileController {
         return ResponseEntity.ok(pagedModel);
     }
 
-    @Operation(summary = "Filter by Twitter", description = "Finds profiles containing the specified Twitter handle with pagination.")
+    @Operation(summary = "Filter by Twitter",
+            description = "Locates profiles using the Twitter handle ('@player').")
     @GetMapping("/filter/twitter")
     public ResponseEntity<PagedModel<EntityModel<PlayerProfile>>> getProfilesByTwitter(
             @RequestParam String twitterHandle,
@@ -66,7 +68,8 @@ public class PlayerProfileController {
         return ResponseEntity.ok(pagedModel);
     }
 
-    @Operation(summary = "Get profile by ID")
+    @Operation(summary = "Get profile by ID",
+            description = "Retrieves the biography, earnings, and social media links of a specific profile.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Profile found successfully"),
             @ApiResponse(responseCode = "404", description = "Profile not found")
@@ -83,7 +86,8 @@ public class PlayerProfileController {
         return ResponseEntity.ok(entityModel);
     }
 
-    @Operation(summary = "Create a new profile")
+    @Operation(summary = "Create a new profile",
+            description = "Creates a detailed profile. This profile must be tied to an existing Player, and each player can only have one profile (One-to-One relationship).")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Profile created successfully")
     })
@@ -100,7 +104,8 @@ public class PlayerProfileController {
                 .body(entityModel);
     }
 
-    @Operation(summary = "Update a profile (Upsert)")
+    @Operation(summary = "Update a profile",
+            description = "Updates the statistics, biography, and Twitter handle of an existing profile.")
     @PutMapping("/{id}")
     public ResponseEntity<EntityModel<PlayerProfile>> updateProfile(@PathVariable Long id, @Valid @RequestBody PlayerProfile updatedProfile) {
         return repository.findById(id)
@@ -137,7 +142,8 @@ public class PlayerProfileController {
                 linkTo(methodOn(PlayerProfileController.class).getAllProfiles(Pageable.unpaged())).withRel("profiles"));
     }
 
-    @Operation(summary = "Delete a profile")
+    @Operation(summary = "Delete a profile",
+            description = "Removes the detailed profile without deleting the base Player.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "204", description = "Profile deleted successfully"),
             @ApiResponse(responseCode = "404", description = "Profile not found")

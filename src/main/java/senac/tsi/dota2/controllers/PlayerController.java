@@ -35,7 +35,8 @@ public class PlayerController {
         this.pagedResourcesAssembler = pagedResourcesAssembler;
     }
 
-    @Operation(summary = "Get all players (Paginated)", description = "Returns the complete list of players with HATEOAS links and pagination.")
+    @Operation(summary = "Get all players (Paginated)",
+            description = "Returns a paginated list of all players along with their REST links.")
     @GetMapping
     public ResponseEntity<PagedModel<EntityModel<Player>>> getAllPlayers(@ParameterObject Pageable pageable) {
         Page<Player> playersPage = repository.findAll(pageable);
@@ -49,7 +50,8 @@ public class PlayerController {
         return ResponseEntity.ok(pagedModel);
     }
 
-    @Operation(summary = "Filter by Nickname", description = "Finds players containing the specified nickname (case-insensitive) with pagination.")
+    @Operation(summary = "Filter by Nickname",
+            description = "Filters players by searching for partial matches of their nickname.")
     @GetMapping("/filter/nickname")
     public ResponseEntity<PagedModel<EntityModel<Player>>> getPlayersByNickname(
             @RequestParam String nickname,
@@ -66,7 +68,8 @@ public class PlayerController {
         return ResponseEntity.ok(pagedModel);
     }
 
-    @Operation(summary = "Get player by ID")
+    @Operation(summary = "Get player by ID",
+            description = "Fetches a player by ID. The response JSON includes data from the Team they belong to.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Player found successfully"),
             @ApiResponse(responseCode = "404", description = "Player not found")
@@ -83,7 +86,8 @@ public class PlayerController {
         return ResponseEntity.ok(entityModel);
     }
 
-    @Operation(summary = "Create a new player")
+    @Operation(summary = "Create a new player",
+            description = "Registers a new player. A valid existing Team ID is mandatory to establish the link (One-to-Many relationship).")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Player created successfully")
     })
@@ -100,16 +104,15 @@ public class PlayerController {
                 .body(entityModel);
     }
 
-    @Operation(summary = "Update a player (Upsert)")
+    @Operation(summary = "Update a player",
+            description = "Updates the player's information, also allowing team transfers by changing the linked Team ID.")
     @PutMapping("/{id}")
     public ResponseEntity<EntityModel<Player>> updatePlayer(@PathVariable Long id, @Valid @RequestBody Player updatedPlayer) {
         return repository.findById(id)
                 .map(player -> {
-                    // 1. SE EXISTIR: Atualiza os dados (200 OK)
                     player.setNickname(updatedPlayer.getNickname());
                     player.setRealName(updatedPlayer.getRealName());
 
-                    // Atualiza o time se for enviado no JSON
                     if (updatedPlayer.getTeam() != null) {
                         player.setTeam(updatedPlayer.getTeam());
                     }
@@ -118,8 +121,7 @@ public class PlayerController {
                     return ResponseEntity.ok(createEntityModel(savedPlayer));
                 })
                 .orElseGet(() -> {
-                    // 2. SE NÃO EXISTIR: Cria um novo (201 Created)
-                    // Limpamos o ID para o Hibernate usar a sequência IDENTITY
+
                     updatedPlayer.setId(null);
                     Player savedPlayer = repository.save(updatedPlayer);
 
@@ -129,14 +131,14 @@ public class PlayerController {
                 });
     }
 
-    // Certifique-se de ter o método auxiliar de links (HATEOAS)
     private EntityModel<Player> createEntityModel(Player player) {
         return EntityModel.of(player,
                 linkTo(methodOn(PlayerController.class).getPlayerById(player.getId())).withSelfRel(),
                 linkTo(methodOn(PlayerController.class).getAllPlayers(Pageable.unpaged())).withRel("players"));
     }
 
-    @Operation(summary = "Delete a player")
+    @Operation(summary = "Delete a player",
+            description = "Removes the player record from the system.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "204", description = "Player deleted successfully"),
             @ApiResponse(responseCode = "404", description = "Player not found")

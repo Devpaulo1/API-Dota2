@@ -22,7 +22,8 @@ import java.net.URI;
 import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.linkTo;
 import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.methodOn;
 
-@Tag(name = "Items", description = "Routes to manage Dota 2 In-Game Items")
+@Tag(name = "Items",
+        description = "Routes to manage Dota 2 In-Game Items")
 @RestController
 @RequestMapping("/api/items")
 public class ItemController {
@@ -35,7 +36,8 @@ public class ItemController {
         this.pagedResourcesAssembler = pagedResourcesAssembler;
     }
 
-    @Operation(summary = "Get all items (Paginated)")
+    @Operation(summary = "Get all items (Paginated)",
+            description = "Accesses the global catalog of available items and equipment in a paginated format.")
     @GetMapping
     public ResponseEntity<PagedModel<EntityModel<Item>>> getAllItems(@ParameterObject Pageable pageable) {
         Page<Item> itemsPage = repository.findAll(pageable);
@@ -43,7 +45,8 @@ public class ItemController {
         return ResponseEntity.ok(pagedModel);
     }
 
-    @Operation(summary = "Filter by Name")
+    @Operation(summary = "Filter by Name",
+            description = "Searches for items in the catalog by partial name matches.")
     @GetMapping("/filter/name")
     public ResponseEntity<PagedModel<EntityModel<Item>>> getItemsByName(@RequestParam String name, @ParameterObject Pageable pageable) {
         Page<Item> itemsPage = repository.findByNameContainingIgnoreCase(name, pageable);
@@ -51,14 +54,16 @@ public class ItemController {
         return ResponseEntity.ok(pagedModel);
     }
 
-    @Operation(summary = "Get item by ID")
+    @Operation(summary = "Get item by ID",
+            description = "Displays detailed specifications (cost, description) of an item by its ID.")
     @GetMapping("/{id}")
     public ResponseEntity<EntityModel<Item>> getItemById(@PathVariable Long id) {
         Item item = repository.findById(id).orElseThrow(() -> new ItemNotFoundException(id));
         return ResponseEntity.ok(createEntityModel(item));
     }
 
-    @Operation(summary = "Create a new item")
+    @Operation(summary = "Create a new item",
+            description = "Adds a new equipment or consumable to the global database. Independent entity.")
     @PostMapping
     public ResponseEntity<EntityModel<Item>> createItem(@Valid @RequestBody Item newItem) {
         Item savedItem = repository.save(newItem);
@@ -67,7 +72,8 @@ public class ItemController {
                 .body(createEntityModel(savedItem));
     }
 
-    @Operation(summary = "Update an item (Upsert)")
+    @Operation(summary = "Update an item",
+            description = "Updates the name, cost, or effects of an existing item.")
     @PutMapping("/{id}")
     public ResponseEntity<EntityModel<Item>> updateItem(@PathVariable Long id, @Valid @RequestBody Item updatedItem) {
         return repository.findById(id)
@@ -90,7 +96,8 @@ public class ItemController {
                 });
     }
 
-    @Operation(summary = "Delete an item")
+    @Operation(summary = "Delete an item",
+            description = "Deletes an item from the game's catalog.")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteItem(@PathVariable Long id) {
         Item item = repository.findById(id).orElseThrow(() -> new ItemNotFoundException(id));

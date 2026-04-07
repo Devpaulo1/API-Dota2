@@ -31,13 +31,13 @@ public class TeamController {
     private final TeamRepository repository;
     private final PagedResourcesAssembler<Team> pagedResourcesAssembler;
 
-    // Injetando o repositório e o montador de páginas
     public TeamController(TeamRepository repository, PagedResourcesAssembler<Team> pagedResourcesAssembler) {
         this.repository = repository;
         this.pagedResourcesAssembler = pagedResourcesAssembler;
     }
 
-    @Operation(summary = "Get all teams (Paginated)", description = "Returns the complete list of teams with HATEOAS links and pagination.")
+    @Operation(summary = "Get all teams (Paginated)",
+            description = "Lists all registered competitive teams, using pagination and HATEOAS.")
     @GetMapping
     public ResponseEntity<PagedModel<EntityModel<Team>>> getAllTeams(@ParameterObject Pageable pageable) {
         Page<Team> teamsPage = repository.findAll(pageable);
@@ -51,7 +51,8 @@ public class TeamController {
         return ResponseEntity.ok(pagedModel);
     }
 
-    @Operation(summary = "Filter by Name", description = "Finds teams containing the specified name (case-insensitive) with pagination.")
+    @Operation(summary = "Filter by Name",
+            description = "Performs a dynamic search for teams by part of their name, ignoring case sensitivity.")
     @GetMapping("/filter/name")
     public ResponseEntity<PagedModel<EntityModel<Team>>> getTeamsByName(
             @RequestParam String name,
@@ -69,7 +70,8 @@ public class TeamController {
         return ResponseEntity.ok(pagedModel);
     }
 
-    @Operation(summary = "Get team by ID", description = "Finds a specific team. Returns 404 Not Found if the ID does not exist.")
+    @Operation(summary = "Get team by ID",
+            description = "Locates a team by its official ID. Returns the team data and its self-rel link.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Team found successfully"),
             @ApiResponse(responseCode = "404", description = "Team not found")
@@ -86,7 +88,8 @@ public class TeamController {
         return ResponseEntity.ok(entityModel);
     }
 
-    @Operation(summary = "Create a new team", description = "Adds a custom team to the database.")
+    @Operation(summary = "Create a new team",
+            description = "Registers a new team into the API ecosystem.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Team created successfully")
     })
@@ -103,7 +106,8 @@ public class TeamController {
                 .body(entityModel);
     }
 
-    @Operation(summary = "Update a team", description = "Updates an existing team's data. If the ID does not exist, it creates a new one.")
+    @Operation(summary = "Update a team",
+            description = "Overwrites the data (name, tag, rating) of an existing team.")
     @PutMapping("/{id}")
     public ResponseEntity<EntityModel<Team>> updateTeam(@PathVariable("id") Long id, @Valid @RequestBody Team updatedTeam) {
         return repository.findById(id)
@@ -133,7 +137,8 @@ public class TeamController {
                 });
     }
 
-    @Operation(summary = "Delete a team", description = "Removes a team from the local database by ID.")
+    @Operation(summary = "Delete a team",
+            description = "Deletes a team from the database. Warning: This may affect players linked to it.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "204", description = "Team deleted successfully (No content returned)"),
             @ApiResponse(responseCode = "404", description = "Team not found")
