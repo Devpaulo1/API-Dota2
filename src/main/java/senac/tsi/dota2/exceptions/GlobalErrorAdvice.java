@@ -1,39 +1,38 @@
 package senac.tsi.dota2.exceptions;
 
-import org.springframework.http.HttpStatus;
+import org.springframework.data.core.PropertyReferenceException;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
-import org.springframework.web.bind.annotation.ResponseStatus;
-import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 
-@RestControllerAdvice
+@ControllerAdvice
 public class GlobalErrorAdvice {
 
-    @ExceptionHandler(HeroNotFoundException.class)
-    @ResponseStatus(HttpStatus.NOT_FOUND)
-    public String heroNotFoundHandler(HeroNotFoundException ex) {
-        return ex.getMessage();
+    @ExceptionHandler(PropertyReferenceException.class)
+    public ResponseEntity<?> handleSortError(PropertyReferenceException ex) {
+        return ResponseEntity.badRequest().body("Invalid sort parameter: " + ex.getPropertyName());
     }
 
-    @ExceptionHandler(TeamNotFoundException.class)
-    @ResponseStatus(HttpStatus.NOT_FOUND)
-    public String teamNotFoundHandler(TeamNotFoundException ex) {
-        return ex.getMessage();
-    }
-    @ExceptionHandler(PlayerNotFoundException.class)
-    @ResponseStatus(HttpStatus.NOT_FOUND)
-    public String playerNotFoundHandler(PlayerNotFoundException ex) {
-        return ex.getMessage();
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<?> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+        return ResponseEntity.badRequest().body("Invalid parameter value: " + ex.getValue());
     }
 
-    @ExceptionHandler(PlayerProfileNotFoundException.class)
-    @ResponseStatus(HttpStatus.NOT_FOUND)
-    public String playerProfileNotFoundHandler(PlayerProfileNotFoundException ex) {
-        return ex.getMessage();
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<?> handleValidation(MethodArgumentNotValidException ex) {
+        return ResponseEntity.badRequest().body("Validation failed for some fields.");
     }
 
-    @ExceptionHandler(ItemNotFoundException.class)
-    @ResponseStatus(HttpStatus.NOT_FOUND)
-    public String itemNotFoundHandler(ItemNotFoundException ex) {
-        return ex.getMessage();
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<?> handleDatabaseIntegrity(DataIntegrityViolationException ex) {
+        return ResponseEntity.badRequest().body("Database error: Check if related entities exist.");
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<?> handleAllExceptions(Exception ex) {
+        return ResponseEntity.badRequest().body("Request could not be processed: " + ex.getMessage());
     }
 }
