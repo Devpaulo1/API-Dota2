@@ -89,7 +89,9 @@ public class HeroController {
     @Operation(summary = "Create a new hero",
             description = "manually registers a new hero into the database.")
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "201", description = "Hero created successfully")
+            @ApiResponse(responseCode = "201", description = "Hero Created successfully"),
+            @ApiResponse(responseCode = "400", description = "Invalid request data or validation failed"),
+            @ApiResponse(responseCode = "409", description = "Conflict: Hero already exists")
     })
     @PostMapping
     public ResponseEntity<EntityModel<Hero>> createHero(@Valid @RequestBody Hero newHero) {
@@ -106,6 +108,11 @@ public class HeroController {
 
     @Operation(summary = "Update a hero (Equip Item)",
             description = "Updates hero data and manages their inventory, allowing the addition or removal of items (Many-to-Many relationship)")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Updated successfully"),
+            @ApiResponse(responseCode = "400", description = "Invalid ID or request body"),
+            @ApiResponse(responseCode = "404", description = "Hero not found")
+    })
     @PutMapping("/{id}")
     public ResponseEntity<EntityModel<Hero>> updateHero(@PathVariable Long id, @Valid @RequestBody Hero updatedHero) {
         return repository.findById(id)
@@ -137,7 +144,8 @@ public class HeroController {
     @Operation(summary = "Delete a hero",
             description = "Permanently removes a hero from the system. Returns 204 (No Content) upon successful deletion.")
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "204", description = "Hero deleted successfully (No content returned)"),
+            @ApiResponse(responseCode = "204", description = "Deleted successfully"),
+            @ApiResponse(responseCode = "400", description = "Invalid ID format"),
             @ApiResponse(responseCode = "404", description = "Hero not found")
     })
     @DeleteMapping("/{id}")

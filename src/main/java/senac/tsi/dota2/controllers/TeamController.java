@@ -91,7 +91,9 @@ public class TeamController {
     @Operation(summary = "Create a new team",
             description = "Registers a new team into the API ecosystem.")
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "201", description = "Team created successfully")
+            @ApiResponse(responseCode = "201", description = "Team created successfully"),
+            @ApiResponse(responseCode = "400", description = "Invalid request data or validation failed"),
+            @ApiResponse(responseCode = "409", description = "Conflict: Team already exists")
     })
     @PostMapping
     public ResponseEntity<EntityModel<Team>> createTeam(@Valid @RequestBody Team newTeam) {
@@ -108,6 +110,11 @@ public class TeamController {
 
     @Operation(summary = "Update a team",
             description = "Overwrites the data (name, tag, rating) of an existing team.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Team Updated successfully"),
+            @ApiResponse(responseCode = "400", description = "Invalid ID or request body"),
+            @ApiResponse(responseCode = "404", description = "Team not found")
+    })
     @PutMapping("/{id}")
     public ResponseEntity<EntityModel<Team>> updateTeam(@PathVariable("id") Long id, @Valid @RequestBody Team updatedTeam) {
         return repository.findById(id)
@@ -140,7 +147,8 @@ public class TeamController {
     @Operation(summary = "Delete a team",
             description = "Deletes a team from the database. Warning: This may affect players linked to it.")
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "204", description = "Team deleted successfully (No content returned)"),
+            @ApiResponse(responseCode = "204", description = "Team deleted successfully"),
+            @ApiResponse(responseCode = "400", description = "Invalid ID format"),
             @ApiResponse(responseCode = "404", description = "Team not found")
     })
     @DeleteMapping("/{id}")

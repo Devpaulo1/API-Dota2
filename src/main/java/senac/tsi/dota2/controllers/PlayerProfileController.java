@@ -89,7 +89,9 @@ public class PlayerProfileController {
     @Operation(summary = "Create a new profile",
             description = "Creates a detailed profile. This profile must be tied to an existing Player, and each player can only have one profile (One-to-One relationship).")
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "201", description = "Profile created successfully")
+            @ApiResponse(responseCode = "201", description = "Profile created successfully"),
+            @ApiResponse(responseCode = "400", description = "Invalid request data or validation failed"),
+            @ApiResponse(responseCode = "409", description = "Conflict: Profile already exists")
     })
     @PostMapping
     public ResponseEntity<EntityModel<PlayerProfile>> createProfile(@Valid @RequestBody PlayerProfile newProfile) {
@@ -106,6 +108,11 @@ public class PlayerProfileController {
 
     @Operation(summary = "Update a profile",
             description = "Updates the statistics, biography, and Twitter handle of an existing profile.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Profile updated successfully"),
+            @ApiResponse(responseCode = "400", description = "Invalid ID or request body"),
+            @ApiResponse(responseCode = "404", description = "Profile not found")
+    })
     @PutMapping("/{id}")
     public ResponseEntity<EntityModel<PlayerProfile>> updateProfile(@PathVariable Long id, @Valid @RequestBody PlayerProfile updatedProfile) {
         return repository.findById(id)
@@ -146,6 +153,7 @@ public class PlayerProfileController {
             description = "Removes the detailed profile without deleting the base Player.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "204", description = "Profile deleted successfully"),
+            @ApiResponse(responseCode = "400", description = "Invalid ID format"),
             @ApiResponse(responseCode = "404", description = "Profile not found")
     })
     @DeleteMapping("/{id}")

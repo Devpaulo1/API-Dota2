@@ -56,6 +56,10 @@ public class ItemController {
 
     @Operation(summary = "Get item by ID",
             description = "Displays detailed specifications (cost, description) of an item by its ID.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Item found successfully"),
+            @ApiResponse(responseCode = "404", description = "Item Record not found")
+    })
     @GetMapping("/{id}")
     public ResponseEntity<EntityModel<Item>> getItemById(@PathVariable Long id) {
         Item item = repository.findById(id).orElseThrow(() -> new ItemNotFoundException(id));
@@ -64,6 +68,11 @@ public class ItemController {
 
     @Operation(summary = "Create a new item",
             description = "Adds a new equipment or consumable to the global database. Independent entity.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "201", description = "Item created successfully"),
+            @ApiResponse(responseCode = "400", description = "Invalid request data or validation failed"),
+            @ApiResponse(responseCode = "409", description = "Conflict: Item already exists")
+    })
     @PostMapping
     public ResponseEntity<EntityModel<Item>> createItem(@Valid @RequestBody Item newItem) {
         Item savedItem = repository.save(newItem);
@@ -74,6 +83,11 @@ public class ItemController {
 
     @Operation(summary = "Update an item",
             description = "Updates the name, cost, or effects of an existing item.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Item Updated successfully"),
+            @ApiResponse(responseCode = "400", description = "Invalid ID or request body"),
+            @ApiResponse(responseCode = "404", description = "Item not found")
+    })
     @PutMapping("/{id}")
     public ResponseEntity<EntityModel<Item>> updateItem(@PathVariable Long id, @Valid @RequestBody Item updatedItem) {
         return repository.findById(id)
@@ -98,6 +112,11 @@ public class ItemController {
 
     @Operation(summary = "Delete an item",
             description = "Deletes an item from the game's catalog.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "204", description = "Item Deleted successfully"),
+            @ApiResponse(responseCode = "400", description = "Invalid ID format"),
+            @ApiResponse(responseCode = "404", description = "Item not found")
+    })
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteItem(@PathVariable Long id) {
         Item item = repository.findById(id).orElseThrow(() -> new ItemNotFoundException(id));

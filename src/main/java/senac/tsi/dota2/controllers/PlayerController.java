@@ -89,7 +89,9 @@ public class PlayerController {
     @Operation(summary = "Create a new player",
             description = "Registers a new player. A valid existing Team ID is mandatory to establish the link (One-to-Many relationship).")
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "201", description = "Player created successfully")
+            @ApiResponse(responseCode = "201", description = "Player created successfully"),
+            @ApiResponse(responseCode = "400", description = "Invalid request data or validation failed"),
+            @ApiResponse(responseCode = "409", description = "Conflict: Player already exists")
     })
     @PostMapping
     public ResponseEntity<EntityModel<Player>> createPlayer(@Valid @RequestBody Player newPlayer) {
@@ -106,6 +108,11 @@ public class PlayerController {
 
     @Operation(summary = "Update a player",
             description = "Updates the player's information, also allowing team transfers by changing the linked Team ID.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Player updated successfully"),
+            @ApiResponse(responseCode = "400", description = "Invalid ID or request body"),
+            @ApiResponse(responseCode = "404", description = "Player not found")
+    })
     @PutMapping("/{id}")
     public ResponseEntity<EntityModel<Player>> updatePlayer(@PathVariable Long id, @Valid @RequestBody Player updatedPlayer) {
         return repository.findById(id)
@@ -141,6 +148,7 @@ public class PlayerController {
             description = "Removes the player record from the system.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "204", description = "Player deleted successfully"),
+            @ApiResponse(responseCode = "400", description = "Invalid ID format"),
             @ApiResponse(responseCode = "404", description = "Player not found")
     })
     @DeleteMapping("/{id}")
