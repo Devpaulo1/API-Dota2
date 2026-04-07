@@ -11,7 +11,7 @@ import org.springframework.context.annotation.Configuration;
 @OpenAPIDefinition(
         info = @Info(
                 title = "Dota 2 REST API",
-                version = "1.1.0",
+                version = "3.1.0",
                 description = """
                 API RESTful desenvolvida para o gerenciamento de dados do universo de Dota 2, consumindo informações da OpenDota API e aplicando persistência relacional customizada. O foco principal do projeto é a aplicação de conceitos avançados de arquitetura backend, atingindo o Nível 3 do Modelo de Maturidade de Richardson.
                 
@@ -72,9 +72,10 @@ import org.springframework.context.annotation.Configuration;
                 )
         ),
         servers = {
-                @Server(url = "https://api-dota2.onrender.com", description = "Servidor de Produção (Render)"),
-                @Server(url = "http://localhost:8080", description = "Servidor Local (Desenvolvimento)")
+                @Server(url = "http://localhost:8080", description = "Servidor Local (Desenvolvimento)"),
+                @Server(url = "https://api-dota2.onrender.com", description = "Servidor de Produção (Render)")
         }
 )
+
 public class OpenApiConfig {
 }
