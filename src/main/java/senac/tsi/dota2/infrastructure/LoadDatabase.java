@@ -18,6 +18,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.ArrayList;
 import java.util.List;
 
 @Configuration
@@ -31,9 +32,7 @@ public class LoadDatabase {
             HttpClient client = HttpClient.newHttpClient();
             ObjectMapper mapper = new ObjectMapper();
 
-            // ==========================================
             // 1. CARREGANDO OS HERÓIS
-            // ==========================================
             try {
                 HttpRequest heroRequest = HttpRequest.newBuilder()
                         .uri(URI.create("https://api.opendota.com/api/heroes"))
@@ -44,13 +43,13 @@ public class LoadDatabase {
                 List<Hero> heroes = mapper.readValue(heroResponse.body(), new TypeReference<List<Hero>>() {});
 
                 heroRepository.saveAll(heroes);
-                log.info( heroes.size() + " Heróis salvos do OpenDota.");
+                log.info(heroes.size() + " Heroes saved from OpenDota.");
             } catch (Exception e) {
-                log.error("Erro ao buscar Heróis: " + e.getMessage());
+                log.error("Error fetching Heroes: " + e.getMessage());
             }
 
-
-            List<Team> topTeams = null; // Declaramos aqui fora para poder usar no Passo 3
+            // 2. CARREGANDO OS TIMES (Salvamento individual para evitar crash de transação)
+            List<Team> validTeams = new ArrayList<>();
             try {
                 HttpRequest teamRequest = HttpRequest.newBuilder()
                         .uri(URI.create("https://api.opendota.com/api/teams"))
@@ -58,39 +57,58 @@ public class LoadDatabase {
                         .build();
 
                 HttpResponse<String> teamResponse = client.send(teamRequest, HttpResponse.BodyHandlers.ofString());
-                List<Team> teams = mapper.readValue(teamResponse.body(), new TypeReference<List<Team>>() {});
+                List<Team> allTeams = mapper.readValue(teamResponse.body(), new TypeReference<List<Team>>() {});
 
-                teams.removeIf(t -> t.getId() == null || t.getName() == null || t.getName().trim().isEmpty());
-                topTeams = teams.size() > 50 ? teams.subList(0, 50) : teams;
+                int count = 0;
+                for (Team t : allTeams) {
+                    if (count >= 20) break; // Reduzi para 20 times para ser mais rápido e seguro
 
-                teamRepository.saveAll(topTeams);
-                log.info(topTeams.size() + " Times salvos do OpenDota.");
+                    // Validação manual antes de salvar para evitar o Erro 500/400
+                    if (t.getId() != null && t.getName() != null && !t.getName().isBlank()) {
+                        try {
+                            // Se a tag ou rating vierem nulos da API, garantimos o valor padrão
+                            if (t.getTag() == null) t.setTag("TBD");
+                            if (t.getRating() == null) t.setRating(0.0);
+
+                            teamRepository.save(t);
+                            validTeams.add(t);
+                            count++;
+                        } catch (Exception ex) {
+                            // Se um time específico der erro (ex: nome duplicado), ignora e pula pro próximo
+                            log.warn("Skipping team " + t.getName() + " due to data error.");
+                        }
+                    }
+                }
+                log.info(validTeams.size() + " Teams successfully synced.");
             } catch (Exception e) {
-                log.error("Erro ao buscar Times: " + e.getMessage());
+                log.error("Critical error fetching Teams: " + e.getMessage());
             }
 
-
             // 3. CARREGANDO JOGADORES DE TESTE (Mock)
-            if (topTeams != null && !topTeams.isEmpty()) {
-                log.info("Iniciando vínculo de Jogadores aos Times baixados...");
+            if (validTeams != null && !validTeams.isEmpty()) {
+                log.info("Linking test players to synced teams...");
 
-                // Pega os dois primeiros times que vieram da API para não dar erro
-                Team time1 = topTeams.get(0);
-                Team time2 = topTeams.size() > 1 ? topTeams.get(1) : time1;
+                // Buscamos os times DIRETO do banco para garantir que o Hibernate não tente criar novos
+                Team time1 = teamRepository.findById(validTeams.get(0).getId()).orElse(null);
+                Team time2 = (validTeams.size() > 1) ? teamRepository.findById(validTeams.get(1).getId()).orElse(null) : time1;
 
-                Player p1 = new Player();
-                p1.setNickname("KillRockts");
-                p1.setRealName("Paulo");
-                p1.setTeam(time1); // Vincula ao primeiro time real da API!
-                playerRepository.save(p1);
+                if (time1 != null && playerRepository.count() == 0) {
+                    Player p1 = new Player();
+                    p1.setNickname("KillRockts");
+                    p1.setRealName("Paulo");
+                    p1.setTeam(time1);
+                    playerRepository.save(p1);
 
-                Player p2 = new Player();
-                p2.setNickname("GamerX");
-                p2.setRealName("Carlos Eduardo");
-                p2.setTeam(time2); // Vincula ao segundo time real da API!
-                playerRepository.save(p2);
+                    if (time2 != null) {
+                        Player p2 = new Player();
+                        p2.setNickname("GamerX");
+                        p2.setRealName("Carlos Eduardo");
+                        p2.setTeam(time2);
+                        playerRepository.save(p2);
+                    }
 
-                log.info("2 Jogadores criados e vinculados aos times reais com sucesso!");
+                    log.info("Test players created successfully!");
+                }
             }
         };
     }

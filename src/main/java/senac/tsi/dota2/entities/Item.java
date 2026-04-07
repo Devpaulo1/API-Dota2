@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PositiveOrZero;
 import lombok.Data;
 
 import java.util.ArrayList;
@@ -18,18 +19,25 @@ public class Item {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Schema(description = "Unique item ID (auto-generated)", example = "1")
     private Long id;
 
     @NotBlank(message = "The item name cannot be empty")
+    @Schema(description = "Item name (e.g., Blink Dagger)", example = "Blink Dagger")
     private String name;
 
     @NotNull(message = "The item cost cannot be null")
-    private Integer cost; // Custo do item em ouro no jogo
+    @PositiveOrZero(message = "Cost must be zero or positive")
+    @Schema(description = "Gold cost of the item", example = "2250")
+    private Integer cost = 0; // Valor padrão para evitar nulos
 
-    private String description;
+    @NotBlank(message = "The item description cannot be empty")
+    @Schema(description = "Detailed description of the item's effects",
+            example = "Teleport to a target point up to 1200 units away.")
+    private String description = "No description available"; // Valor padrão
 
-    // Many-to-Many (Muitos Itens para Muitos Heróis)
     @ManyToMany(mappedBy = "items")
-    @JsonIgnore // O nosso velho amigo salvador de Erro 500 (Loop infinito)
+    @JsonIgnore
+    @Schema(description = "List of heroes that can use this item")
     private List<Hero> heroes = new ArrayList<>();
 }

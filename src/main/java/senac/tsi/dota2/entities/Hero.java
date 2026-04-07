@@ -15,33 +15,35 @@ import java.util.List;
 @Data
 @Entity
 @JsonIgnoreProperties(ignoreUnknown = true)
-@Schema(description = "Entidade que representa um herói do Dota 2",
+@Schema(description = "Entity representing a Dota 2 hero",
         example = "{\"id\": 999, \"localized_name\": \"killrockts\", \"attack_type\": \"Ranged\"}")
 public class Hero {
 
     @Id
-    @Schema(description = "ID único do herói (manual)", example = "999")
+    @NotNull(message = "Hero ID is mandatory")
+    @Schema(description = "Unique hero ID (manual/OpenDota)", example = "999")
     private Long id;
 
-    @NotBlank(message = "O nome do herói não pode estar em branco")
-    @Size(min = 2, max = 255, message = "O nome deve ter entre 2 e 255 caracteres")
+    @NotBlank(message = "Hero name cannot be blank")
+    @Size(min = 2, max = 255, message = "Name must be between 2 and 255 characters")
     @JsonProperty("localized_name")
-    @Schema(description = "Nome localizado do herói", example = "killrockts")
+    @Schema(description = "Localized name of the hero", example = "killrockts")
     private String localizedName;
 
-    @NotNull(message = "O tipo de ataque é obrigatório")
+    @NotNull(message = "Attack type is mandatory")
     @Enumerated(EnumType.STRING)
     @JsonProperty("attack_type")
-    @Schema(description = "Tipo de ataque do herói", example = "Ranged")
+    @Schema(description = "Hero's attack type", example = "Ranged")
     private AttackType attackType;
 
-    @ManyToMany
+    @Size(max = 6, message = "Hero inventory cannot exceed 6 items")
+    @ManyToMany(cascade = {CascadeType.PERSIST, CascadeType.MERGE}, fetch = FetchType.LAZY)
     @JoinTable(
             name = "hero_item",
             joinColumns = @JoinColumn(name = "hero_id"),
             inverseJoinColumns = @JoinColumn(name = "item_id")
     )
-    @Schema(description = "Lista de itens equipados pelo herói")
+    @Schema(description = "List of items equipped by the hero (max 6)")
     private List<Item> items = new ArrayList<>();
 
     public Hero() {
