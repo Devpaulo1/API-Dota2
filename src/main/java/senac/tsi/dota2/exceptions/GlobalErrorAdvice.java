@@ -9,6 +9,10 @@ import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
+import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 
 @ControllerAdvice
 public class GlobalErrorAdvice {
@@ -16,9 +20,17 @@ public class GlobalErrorAdvice {
     // 1. Erros de Validação (@Valid, @Size, @NotBlank) -> 400 Bad Request
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<?> handleValidation(MethodArgumentNotValidException ex) {
-        return ResponseEntity.badRequest().body("Validation failed: Check your fields constraints (e.g., max items, not blank).");
-    }
+        // Pega apenas a mensagem de erro que definimos na Entity (ex: "O inventário... não pode ultrapassar 6 itens")
+        String errorMessage = ex.getBindingResult().getAllErrors().get(0).getDefaultMessage();
 
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", HttpStatus.BAD_REQUEST.value());
+        body.put("error", "Validation Error");
+        body.put("message", errorMessage); // Aqui aparece sua mensagem personalizada
+
+        return new ResponseEntity<>(body, HttpStatus.BAD_REQUEST);
+    }
     // 2. Erros de Tipagem de ID (Ex: /api/players/false) -> 400 Bad Request
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<?> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {

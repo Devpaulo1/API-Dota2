@@ -16,7 +16,7 @@ import java.util.List;
 @Entity
 @JsonIgnoreProperties(ignoreUnknown = true)
 @Schema(description = "Entity representing a Dota 2 hero",
-        example = "{\"id\": 999, \"localized_name\": \"killrockts\", \"attack_type\": \"Ranged\"}")
+        example = "{\"id\": 999, \"localized_name\": \"killrockts\", \"attack_type\": \"Ranged\", \"items\": [{\"id\": 1}, {\"id\": 2}, {\"id\": 3}]}")
 public class Hero {
 
     @Id
@@ -37,7 +37,7 @@ public class Hero {
     private AttackType attackType;
 
     @Size(max = 6, message = "Hero inventory cannot exceed 6 items")
-    @ManyToMany(cascade = {CascadeType.PERSIST, CascadeType.MERGE}, fetch = FetchType.LAZY)
+    @ManyToMany
     @JoinTable(
             name = "hero_item",
             joinColumns = @JoinColumn(name = "hero_id"),
