@@ -1,7 +1,7 @@
 package senac.tsi.dota2.entities;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.persistence.CascadeType;
@@ -35,16 +35,14 @@ public class Team {
 
     @NotBlank(message = "Team tag is mandatory")
     @Schema(description = "Official team abbreviation", example = "TL")
-    private String tag = "TBD"; // Valor padrão: To Be Defined
+    private String tag = "TBD";
 
     @NotNull(message = "Team rating cannot be null")
     @PositiveOrZero(message = "Rating must be zero or positive")
     @Schema(description = "Team ranking score", example = "1550.5")
-    private Double rating = 0.0; // Valor padrão: 0.0
+    private Double rating = 0.0;
 
-    @JsonIgnore
-    @OneToMany(mappedBy = "team", cascade = CascadeType.ALL, orphanRemoval = true)
-    @Schema(description = "List of players currently in this team")
+    @OneToMany(mappedBy = "team", cascade = CascadeType.ALL)
+    @JsonManagedReference
     private List<Player> players = new ArrayList<>();
-
 }

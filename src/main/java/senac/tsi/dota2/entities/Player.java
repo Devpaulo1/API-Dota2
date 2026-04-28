@@ -1,5 +1,6 @@
 package senac.tsi.dota2.entities;
 
+import com.fasterxml.jackson.annotation.JsonBackReference;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
@@ -13,7 +14,7 @@ import lombok.AllArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 @Schema(description = "Entity representing a professional player",
-        example = "{\"nickname\": \"PauloProPlayer\", \"realName\": \"Paulo da Silva\", \"team\": {\"team_id\": 7819701}}")
+        example = "{\"nickname\": \"PauloProPlayer\", \"realName\": \"Paulo da Silva\", \"team\": {\"id\": 7819701}}")
 public class Player {
 
     @Id
@@ -31,13 +32,11 @@ public class Player {
     @Schema(description = "Full real name of the player", example = "Paulo da Silva")
     private String realName;
 
-    @ManyToOne(fetch = FetchType.EAGER) // REMOVI O CASCADE DAQUI
+    @ManyToOne
     @JoinColumn(name = "team_id")
-    @Schema(description = "The team the player is currently signed to")
+    @JsonBackReference
     private Team team;
 
     @OneToOne(mappedBy = "player", cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
-    @Schema(description = "Player's biographical profile")
     private PlayerProfile profile;
-
 }
