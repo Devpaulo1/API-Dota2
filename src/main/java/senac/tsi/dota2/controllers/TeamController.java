@@ -40,8 +40,14 @@ public class TeamController {
     @Operation(summary = "Get all teams (Paginated)",
             description = "Lists all registered competitive teams, using pagination and HATEOAS.")
     @GetMapping
-    public ResponseEntity<PagedModel<EntityModel<Team>>> getAllTeams(@ParameterObject Pageable pageable) {
+    public ResponseEntity<?> getAllTeams(@ParameterObject Pageable pageable) {
         Page<Team> teamsPage = repository.findAll(pageable);
+
+        if (pageable.getPageNumber() >= teamsPage.getTotalPages() && teamsPage.getTotalPages() > 0) {
+            return ResponseEntity.badRequest()
+                    .body("Invalid page! The total number of available pages is " + teamsPage.getTotalPages() +
+                            ". Remember that the first page index is 0.");
+        }
 
         PagedModel<EntityModel<Team>> pagedModel = pagedResourcesAssembler.toModel(teamsPage, team ->
                 EntityModel.of(team,

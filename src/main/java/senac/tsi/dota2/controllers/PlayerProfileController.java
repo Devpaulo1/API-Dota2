@@ -40,8 +40,14 @@ public class PlayerProfileController {
     @Operation(summary = "Get all profiles (Paginated)",
             description = "Lists the detailed profiles of all players, with pagination support.")
     @GetMapping
-    public ResponseEntity<PagedModel<EntityModel<PlayerProfile>>> getAllProfiles(@ParameterObject Pageable pageable) {
+    public ResponseEntity<?> getAllProfiles(@ParameterObject Pageable pageable) {
         Page<PlayerProfile> profilesPage = repository.findAll(pageable);
+
+        if (pageable.getPageNumber() >= profilesPage.getTotalPages() && profilesPage.getTotalPages() > 0) {
+            return ResponseEntity.badRequest()
+                    .body("Invalid page! The total number of available pages is " + profilesPage.getTotalPages() +
+                            ". Remember that the first page index is 0.");
+        }
 
         PagedModel<EntityModel<PlayerProfile>> pagedModel = pagedResourcesAssembler.toModel(profilesPage, profile ->
                 EntityModel.of(profile,

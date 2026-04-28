@@ -40,8 +40,15 @@ public class ItemController {
     @Operation(summary = "Get all items (Paginated)",
             description = "Accesses the global catalog of available items and equipment in a paginated format.")
     @GetMapping
-    public ResponseEntity<PagedModel<EntityModel<Item>>> getAllItems(@ParameterObject Pageable pageable) {
+    public ResponseEntity<?> getAllItems(@ParameterObject Pageable pageable) {
         Page<Item> itemsPage = repository.findAll(pageable);
+
+        if (pageable.getPageNumber() >= itemsPage.getTotalPages() && itemsPage.getTotalPages() > 0) {
+            return ResponseEntity.badRequest()
+                    .body("Invalid page! The total number of available pages is " + itemsPage.getTotalPages() +
+                            ". Remember that the first page index is 0.");
+        }
+
         PagedModel<EntityModel<Item>> pagedModel = pagedResourcesAssembler.toModel(itemsPage, this::createEntityModel);
         return ResponseEntity.ok(pagedModel);
     }

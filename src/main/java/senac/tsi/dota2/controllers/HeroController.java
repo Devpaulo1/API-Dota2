@@ -40,9 +40,17 @@ public class HeroController {
     @Operation(summary = "Get all heroes (Paginated)",
             description = "Returns a paginated list of all registered heroes, including HATEOAS navigation links.")
     @GetMapping
-    public ResponseEntity<PagedModel<EntityModel<Hero>>> getAllHeroes(@ParameterObject Pageable pageable) {
+    public ResponseEntity<?> getAllHeroes(@ParameterObject Pageable pageable) {
         Page<Hero> heroesPage = repository.findAll(pageable);
 
+        // 1. Validação de Página Existente
+        if (pageable.getPageNumber() >= heroesPage.getTotalPages() && heroesPage.getTotalPages() > 0) {
+            return ResponseEntity.badRequest()
+                    .body("Invalid page! The total number of available pages is " + heroesPage.getTotalPages() +
+                            ". Remember that the first page index is 0.");
+        }
+
+        // 2. Construção do PagedModel (seu código original)
         PagedModel<EntityModel<Hero>> pagedModel = pagedResourcesAssembler.toModel(heroesPage, hero ->
                 EntityModel.of(hero,
                         linkTo(methodOn(HeroController.class).getHeroById(hero.getId())).withSelfRel(),

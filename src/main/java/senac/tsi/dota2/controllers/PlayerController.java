@@ -39,8 +39,14 @@ public class PlayerController {
     @Operation(summary = "Get all players (Paginated)",
             description = "Returns a paginated list of all players along with their REST links.")
     @GetMapping
-    public ResponseEntity<PagedModel<EntityModel<Player>>> getAllPlayers(@ParameterObject Pageable pageable) {
+    public ResponseEntity<?> getAllPlayers(@ParameterObject Pageable pageable) {
         Page<Player> playersPage = repository.findAll(pageable);
+
+        if (pageable.getPageNumber() >= playersPage.getTotalPages() && playersPage.getTotalPages() > 0) {
+            return ResponseEntity.badRequest()
+                    .body("Invalid page! The total number of available pages is " + playersPage.getTotalPages() +
+                            ". Remember that the first page index is 0.");
+        }
 
         PagedModel<EntityModel<Player>> pagedModel = pagedResourcesAssembler.toModel(playersPage, player ->
                 EntityModel.of(player,
@@ -50,7 +56,6 @@ public class PlayerController {
 
         return ResponseEntity.ok(pagedModel);
     }
-
     @Operation(summary = "Filter by Nickname",
             description = "Filters players by searching for partial matches of their nickname.")
     @GetMapping("/filter/nickname")
