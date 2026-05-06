@@ -53,6 +53,14 @@ import org.springframework.context.annotation.Configuration;
                 
                 Com essa abordagem, a API se torna mais autodescritiva, reduz o acoplamento com o cliente e melhora a experiência de integração, já que a navegação entre os recursos acontece de forma mais natural e guiada.
                 
+                            Recursos Avançados (Entrega 2):
+                
+                Para elevar a segurança e a resiliência da aplicação, foram integrados padrões avançados de mercado:
+                
+                - **Idempotência:** Para proteger o banco de dados contra duplicidades causadas por falhas de rede ou "cliques duplos" (Double Submit), rotas de criação (`POST`) utilizam validação de estado. Ao enviar o cabeçalho `Idempotency-Key`, a API garante que uma mesma carga de dados seja processada de forma segura, retornando o resultado original caso a mesma chave seja reutilizada (Replay), ou barrando a requisição com um erro **409 Conflict** em caso de mudança de dados.
+                
+                - **Rate Limiting:** A API possui uma camada global de proteção contra abusos e sobrecargas baseada no algoritmo Token Bucket (via Bucket4j). A taxa de requisições é isolada **por IP/Cliente**. Ao exceder o limite estabelecido, a API bloqueia o acesso imediatamente com o status **429 (Too Many Requests)**, fornecendo o cabeçalho oficial `Retry-After` com o tempo dinâmico exato (em segundos) restante para a próxima janela de requisições.
+                
                             Deploy e Ambientes:
                 
                 A aplicação foi disponibilizada em um ambiente real de execução, utilizando a plataforma Render (PaaS). Com isso, é possível acessar a API publicamente, facilitando testes, validações e demonstrações do funcionamento fora do ambiente local.

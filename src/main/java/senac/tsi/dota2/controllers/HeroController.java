@@ -1,10 +1,10 @@
 package senac.tsi.dota2.controllers;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.persistence.EntityNotFoundException;
 import jakarta.validation.Valid;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Page;
@@ -20,6 +20,8 @@ import senac.tsi.dota2.exceptions.HeroNotFoundException;
 import senac.tsi.dota2.repositories.HeroRepository;
 
 import java.net.URI;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.linkTo;
 import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.methodOn;
@@ -32,6 +34,10 @@ public class HeroController {
     private final HeroRepository repository;
     private final PagedResourcesAssembler<Hero> pagedResourcesAssembler;
 
+    // --- VARIÁVEIS DE IDEMPOTÊNCIA (No padrão do professor) ---
+    private final Map<String, IdempotentCreateResponse> createHeroResponses = new ConcurrentHashMap<>();
+    private final Object createHeroIdempotencyLock = new Object();
+
     public HeroController(HeroRepository repository, PagedResourcesAssembler<Hero> pagedResourcesAssembler) {
         this.repository = repository;
         this.pagedResourcesAssembler = pagedResourcesAssembler;
@@ -43,14 +49,12 @@ public class HeroController {
     public ResponseEntity<?> getAllHeroes(@ParameterObject Pageable pageable) {
         Page<Hero> heroesPage = repository.findAll(pageable);
 
-        // 1. Validação de Página Existente
         if (pageable.getPageNumber() >= heroesPage.getTotalPages() && heroesPage.getTotalPages() > 0) {
             return ResponseEntity.badRequest()
                     .body("Invalid page! The total number of available pages is " + heroesPage.getTotalPages() +
                             ". Remember that the first page index is 0.");
         }
 
-        // 2. Construção do PagedModel (seu código original)
         PagedModel<EntityModel<Hero>> pagedModel = pagedResourcesAssembler.toModel(heroesPage, hero ->
                 EntityModel.of(hero,
                         linkTo(methodOn(HeroController.class).getHeroById(hero.getId())).withSelfRel(),
@@ -100,33 +104,63 @@ public class HeroController {
             description = "Manually registers a new hero into the database. ID must be greater than zero and unique.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Hero Created successfully"),
-            @ApiResponse(responseCode = "400", description = "Invalid request data: ID must be > 0"),
-            @ApiResponse(responseCode = "409", description = "Conflict: Hero ID already exists")
+            @ApiResponse(responseCode = "400", description = "Invalid request data or missing Idempotency-Key"),
+            @ApiResponse(responseCode = "409", description = "Conflict: Hero ID already exists or Idempotency Key reused")
     })
     @PostMapping
-    public ResponseEntity<?> createHero(@Valid @RequestBody Hero newHero) {
+    public ResponseEntity<?> createHero(
+            @Parameter(description = "Required key used to make repeated create requests idempotent", required = true)
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @Valid @RequestBody Hero newHero) {
 
-        // TRAVA 1: Impedir IDs 0 ou negativos (o herói -1 que você criou)
+        // Impede id 0 ou negativo
         if (newHero.getId() != null && newHero.getId() <= 0) {
             return ResponseEntity.badRequest().body("Hero ID must be greater than zero.");
         }
 
-        // TRAVA 2: Impedir sobrescrever o herói (o erro de apagar o Herói ID 1)
-        if (repository.existsById(newHero.getId())) {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body("Conflict: Hero with ID " + newHero.getId() + " already exists. Use PUT to update.");
+        // Validação da Chave
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return ResponseEntity.badRequest().build(); // Retorna só 400, sem body
         }
 
-        // Se passou pelas travas, salvamos normalmente
-        Hero savedHero = repository.save(newHero);
+        var requestFingerprint = new CreateHeroFingerprint(newHero.getLocalizedName(), newHero.getAttackType());
 
-        EntityModel<Hero> entityModel = EntityModel.of(savedHero,
-                linkTo(methodOn(HeroController.class).getHeroById(savedHero.getId())).withSelfRel(),
-                linkTo(methodOn(HeroController.class).getAllHeroes(Pageable.unpaged())).withRel("heroes"));
+        // Lock dedicado
+        synchronized (createHeroIdempotencyLock) {
+            var storedResponse = createHeroResponses.get(idempotencyKey);
 
-        return ResponseEntity
-                .created(URI.create("/api/heroes/" + savedHero.getId()))
-                .body(entityModel);
+            if (storedResponse != null) {
+                if (!storedResponse.requestFingerprint().equals(requestFingerprint)) {
+                    return ResponseEntity.status(HttpStatus.CONFLICT).build(); // Retorna só 409, sem body
+                }
+
+                // Replay da resposta original (201 com o mesmo cabeçalho Location)
+                return ResponseEntity.created(storedResponse.location())
+                        .body(storedResponse.entityModel());
+            }
+
+            // Impede sobrescrever o herói (Sua trava original)
+            if (repository.existsById(newHero.getId())) {
+                return ResponseEntity.status(HttpStatus.CONFLICT).build();
+            }
+
+            // Persiste no banco
+            var savedHero = repository.save(newHero);
+            URI location = URI.create("/api/heroes/" + savedHero.getId());
+
+            EntityModel<Hero> entityModel = EntityModel.of(savedHero,
+                    linkTo(methodOn(HeroController.class).getHeroById(savedHero.getId())).withSelfRel(),
+                    linkTo(methodOn(HeroController.class).getAllHeroes(Pageable.unpaged())).withRel("heroes"));
+
+            // Guarda tudo no cache para um possível replay
+            createHeroResponses.put(idempotencyKey, new IdempotentCreateResponse(
+                    requestFingerprint,
+                    entityModel,
+                    location
+            ));
+
+            return ResponseEntity.created(location).body(entityModel);
+        }
     }
 
     @Operation(summary = "Update or Create a hero",
@@ -138,35 +172,24 @@ public class HeroController {
     })
     @PutMapping("/{id}")
     public ResponseEntity<EntityModel<Hero>> updateHero(@PathVariable Long id, @Valid @RequestBody Hero updatedHero) {
-
-        // 1. SEGURANÇA: Impede IDs 0 ou negativos
         if (id <= 0) {
             return ResponseEntity.badRequest().build();
         }
-
-        // 2. SINCRONIA: O ID da URL sempre manda (esmaga o 999 do body)
         updatedHero.setId(id);
-
-        // 3. REGRA DO PROFESSOR: Checa se existe para decidir o status final
         boolean exists = repository.existsById(id);
-
-        // 4. SALVAMENTO: O 'save' faz Update se existe ou Insert se não existe
         Hero savedHero = repository.save(updatedHero);
 
-        // 5. HATEOAS: Gera os links obrigatórios do Nível 3
         EntityModel<Hero> entityModel = EntityModel.of(savedHero,
                 linkTo(methodOn(HeroController.class).getHeroById(id)).withSelfRel(),
                 linkTo(methodOn(HeroController.class).getAllHeroes(Pageable.unpaged())).withRel("heroes"));
 
-        // 6. RESPOSTA DINÂMICA:
         if (exists) {
-            // Se já existia, status 200 OK
             return ResponseEntity.ok(entityModel);
         } else {
-            // Se não existia e foi criado agora, status 201 Created
             return ResponseEntity.status(HttpStatus.CREATED).body(entityModel);
         }
     }
+
     @Operation(summary = "Delete a hero",
             description = "Permanently removes a hero from the system. Returns 204 (No Content) upon successful deletion.")
     @ApiResponses(value = {
@@ -180,4 +203,8 @@ public class HeroController {
         repository.delete(hero);
         return ResponseEntity.noContent().build();
     }
+
+    // --- RECORDS NO PADRÃO DO PROFESSOR ---
+    private record CreateHeroFingerprint(String name, Hero.AttackType attackType) {}
+    private record IdempotentCreateResponse(CreateHeroFingerprint requestFingerprint, EntityModel<Hero> entityModel, URI location) {}
 }
