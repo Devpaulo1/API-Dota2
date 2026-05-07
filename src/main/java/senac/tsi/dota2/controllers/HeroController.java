@@ -2,6 +2,8 @@ package senac.tsi.dota2.controllers;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -34,7 +36,6 @@ public class HeroController {
     private final HeroRepository repository;
     private final PagedResourcesAssembler<Hero> pagedResourcesAssembler;
 
-    // --- VARIÁVEIS DE IDEMPOTÊNCIA (No padrão do professor) ---
     private final Map<String, IdempotentCreateResponse> createHeroResponses = new ConcurrentHashMap<>();
     private final Object createHeroIdempotencyLock = new Object();
 
@@ -57,7 +58,8 @@ public class HeroController {
 
         PagedModel<EntityModel<Hero>> pagedModel = pagedResourcesAssembler.toModel(heroesPage, hero ->
                 EntityModel.of(hero,
-                        linkTo(methodOn(HeroController.class).getHeroById(hero.getId())).withSelfRel(),
+                        // Passamos a versão 2.0.0 como padrão para os links internos funcionarem
+                        linkTo(methodOn(HeroController.class).getHeroById(hero.getId(), "2.0.0")).withSelfRel(),
                         linkTo(methodOn(HeroController.class).getAllHeroes(pageable)).withRel("heroes")
                 ));
 
@@ -75,33 +77,50 @@ public class HeroController {
 
         PagedModel<EntityModel<Hero>> pagedModel = pagedResourcesAssembler.toModel(heroesPage, hero ->
                 EntityModel.of(hero,
-                        linkTo(methodOn(HeroController.class).getHeroById(hero.getId())).withSelfRel(),
+                        linkTo(methodOn(HeroController.class).getHeroById(hero.getId(), "2.0.0")).withSelfRel(),
                         linkTo(methodOn(HeroController.class).getAllHeroes(pageable)).withRel("heroes")
                 ));
 
         return ResponseEntity.ok(pagedModel);
     }
 
-    @Operation(summary = "Get hero by ID",
-            description = "Retrieves the details of a specific hero by their unique ID. Returns 404 if not found.")
+    // --- GET COM VERSIONAMENTO ---
+    @Operation(summary = "Get hero by ID (Versioned)",
+            description = "Retrieves the details of a specific hero. Use X-API-VERSION to get simple (1.0.0) or HATEOAS (2.0.0) formats.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Hero found successfully"),
             @ApiResponse(responseCode = "404", description = "Hero not found")
     })
     @GetMapping("/{id}")
-    public ResponseEntity<EntityModel<Hero>> getHeroById(@PathVariable Long id) {
+    public ResponseEntity<?> getHeroById(
+            @PathVariable Long id,
+            @Parameter(in = ParameterIn.HEADER, name = "X-API-VERSION", description = "API Version",
+                    schema = @Schema(type = "string", allowableValues = {"1.0.0", "2.0.0"}, defaultValue = "2.0.0"))
+            @RequestHeader(value = "X-API-VERSION", defaultValue = "2.0.0") String apiVersion) {
+
         Hero hero = repository.findById(id)
                 .orElseThrow(() -> new HeroNotFoundException(id));
 
+        // Versão Legada
+        if ("1.0.0".equals(apiVersion)) {
+            return ResponseEntity.ok(Map.of(
+                    "id", hero.getId(),
+                    "name", hero.getLocalizedName(),
+                    "attack_type", hero.getAttackType()
+            ));
+        }
+
+        // Versão Atual (Padrão)
         EntityModel<Hero> entityModel = EntityModel.of(hero,
-                linkTo(methodOn(HeroController.class).getHeroById(id)).withSelfRel(),
+                linkTo(methodOn(HeroController.class).getHeroById(id, apiVersion)).withSelfRel(),
                 linkTo(methodOn(HeroController.class).getAllHeroes(Pageable.unpaged())).withRel("heroes"));
 
         return ResponseEntity.ok(entityModel);
     }
 
-    @Operation(summary = "Create a new hero",
-            description = "Manually registers a new hero into the database. ID must be greater than zero and unique.")
+    // --- POST COM IDEMPOTÊNCIA E VERSIONAMENTO ---
+    @Operation(summary = "Create a new hero (Versioned)",
+            description = "Registers a new hero. Supports idempotency and versioning (1.0.0 for simple response, 2.0.0 for HATEOAS).")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Hero Created successfully"),
             @ApiResponse(responseCode = "400", description = "Invalid request data or missing Idempotency-Key"),
@@ -109,56 +128,68 @@ public class HeroController {
     })
     @PostMapping
     public ResponseEntity<?> createHero(
+            @Parameter(in = ParameterIn.HEADER, name = "X-API-VERSION", description = "API Version",
+                    schema = @Schema(type = "string", allowableValues = {"1.0.0", "2.0.0"}, defaultValue = "2.0.0"))
+            @RequestHeader(value = "X-API-VERSION", defaultValue = "2.0.0") String apiVersion,
             @Parameter(description = "Required key used to make repeated create requests idempotent", required = true)
             @RequestHeader("Idempotency-Key") String idempotencyKey,
             @Valid @RequestBody Hero newHero) {
 
-        // Impede id 0 ou negativo
         if (newHero.getId() != null && newHero.getId() <= 0) {
             return ResponseEntity.badRequest().body("Hero ID must be greater than zero.");
         }
 
-        // Validação da Chave
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
-            return ResponseEntity.badRequest().build(); // Retorna só 400, sem body
+            return ResponseEntity.badRequest().build();
         }
 
         var requestFingerprint = new CreateHeroFingerprint(newHero.getLocalizedName(), newHero.getAttackType());
 
-        // Lock dedicado
         synchronized (createHeroIdempotencyLock) {
             var storedResponse = createHeroResponses.get(idempotencyKey);
 
             if (storedResponse != null) {
                 if (!storedResponse.requestFingerprint().equals(requestFingerprint)) {
-                    return ResponseEntity.status(HttpStatus.CONFLICT).build(); // Retorna só 409, sem body
+                    return ResponseEntity.status(HttpStatus.CONFLICT).build();
                 }
 
-                // Replay da resposta original (201 com o mesmo cabeçalho Location)
-                return ResponseEntity.created(storedResponse.location())
-                        .body(storedResponse.entityModel());
+                // REPLAY: Respeita a versão solicitada, extraindo os dados do cache
+                if ("1.0.0".equals(apiVersion)) {
+                    Hero cachedHero = storedResponse.entityModel().getContent();
+                    return ResponseEntity.created(storedResponse.location()).body(Map.of(
+                            "id", cachedHero.getId(),
+                            "name", cachedHero.getLocalizedName(),
+                            "attack_type", cachedHero.getAttackType()
+                    ));
+                }
+                return ResponseEntity.created(storedResponse.location()).body(storedResponse.entityModel());
             }
 
-            // Impede sobrescrever o herói (Sua trava original)
             if (repository.existsById(newHero.getId())) {
                 return ResponseEntity.status(HttpStatus.CONFLICT).build();
             }
 
-            // Persiste no banco
             var savedHero = repository.save(newHero);
             URI location = URI.create("/api/heroes/" + savedHero.getId());
 
             EntityModel<Hero> entityModel = EntityModel.of(savedHero,
-                    linkTo(methodOn(HeroController.class).getHeroById(savedHero.getId())).withSelfRel(),
+                    linkTo(methodOn(HeroController.class).getHeroById(savedHero.getId(), apiVersion)).withSelfRel(),
                     linkTo(methodOn(HeroController.class).getAllHeroes(Pageable.unpaged())).withRel("heroes"));
 
-            // Guarda tudo no cache para um possível replay
             createHeroResponses.put(idempotencyKey, new IdempotentCreateResponse(
                     requestFingerprint,
                     entityModel,
                     location
             ));
 
+            // RESPOSTA NOVA: Respeita a versão solicitada
+            if ("1.0.0".equals(apiVersion)) {
+                return ResponseEntity.created(location).body(Map.of(
+                        "id", savedHero.getId(),
+                        "name", savedHero.getLocalizedName(),
+                        "attack_type", savedHero.getAttackType()
+                ));
+            }
             return ResponseEntity.created(location).body(entityModel);
         }
     }
@@ -180,7 +211,7 @@ public class HeroController {
         Hero savedHero = repository.save(updatedHero);
 
         EntityModel<Hero> entityModel = EntityModel.of(savedHero,
-                linkTo(methodOn(HeroController.class).getHeroById(id)).withSelfRel(),
+                linkTo(methodOn(HeroController.class).getHeroById(id, "2.0.0")).withSelfRel(),
                 linkTo(methodOn(HeroController.class).getAllHeroes(Pageable.unpaged())).withRel("heroes"));
 
         if (exists) {
@@ -204,7 +235,6 @@ public class HeroController {
         return ResponseEntity.noContent().build();
     }
 
-    // --- RECORDS NO PADRÃO DO PROFESSOR ---
     private record CreateHeroFingerprint(String name, Hero.AttackType attackType) {}
     private record IdempotentCreateResponse(CreateHeroFingerprint requestFingerprint, EntityModel<Hero> entityModel, URI location) {}
 }

@@ -61,6 +61,8 @@ import org.springframework.context.annotation.Configuration;
                 
                 - **Rate Limiting:** A API possui uma camada global de proteção contra abusos e sobrecargas baseada no algoritmo Token Bucket (via Bucket4j). A taxa de requisições é isolada **por IP/Cliente**. Ao exceder o limite estabelecido, a API bloqueia o acesso imediatamente com o status **429 (Too Many Requests)**, fornecendo o cabeçalho oficial `Retry-After` com o tempo dinâmico exato (em segundos) restante para a próxima janela de requisições.
                 
+                - **Versionamento de API:** Para garantir compatibilidade com múltiplos clientes e aderência ao Nível 3 de Richardson, a API implementa Versionamento via Cabeçalho (Header Versioning). O cliente pode selecionar o formato da resposta desejado utilizando o cabeçalho `X-API-VERSION`, permitindo a evolução segura dos contratos da API sem alterar os URIs (ex: rota `/api/system/info`).
+                            
                             Deploy e Ambientes:
                 
                 A aplicação foi disponibilizada em um ambiente real de execução, utilizando a plataforma Render (PaaS). Com isso, é possível acessar a API publicamente, facilitando testes, validações e demonstrações do funcionamento fora do ambiente local.
