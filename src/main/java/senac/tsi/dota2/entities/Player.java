@@ -14,7 +14,7 @@ import lombok.AllArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 @Schema(description = "Entity representing a professional player",
-        example = "{\"nickname\": \"PauloProPlayer\", \"realName\": \"Paulo da Silva\", \"team\": {\"id\": 7819701}}")
+        example = "{\"nickname\": \"PauloProPlayer\", \"realName\": \"Paulo da Silva\", \"team\": {\"team_id\": 7819701}}")
 public class Player {
 
     @Id

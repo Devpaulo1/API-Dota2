@@ -1,6 +1,7 @@
 package senac.tsi.dota2.controllers;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -20,6 +21,8 @@ import senac.tsi.dota2.exceptions.PlayerProfileNotFoundException;
 import senac.tsi.dota2.repositories.PlayerProfileRepository;
 
 import java.net.URI;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.linkTo;
 import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.methodOn;
@@ -31,6 +34,10 @@ public class PlayerProfileController {
 
     private final PlayerProfileRepository repository;
     private final PagedResourcesAssembler<PlayerProfile> pagedResourcesAssembler;
+
+    // --- VARIÁVEIS DE IDEMPOTÊNCIA ---
+    private final Map<String, IdempotentCreateResponse> createProfileResponses = new ConcurrentHashMap<>();
+    private final Object createProfileIdempotencyLock = new Object();
 
     public PlayerProfileController(PlayerProfileRepository repository, PagedResourcesAssembler<PlayerProfile> pagedResourcesAssembler) {
         this.repository = repository;
@@ -94,24 +101,68 @@ public class PlayerProfileController {
         return ResponseEntity.ok(entityModel);
     }
 
+    // --- POST COM IDEMPOTÊNCIA ---
     @Operation(summary = "Create a new profile",
             description = "Creates a detailed profile. This profile must be tied to an existing Player, and each player can only have one profile (One-to-One relationship).")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Profile created successfully"),
-            @ApiResponse(responseCode = "400", description = "Invalid request data or validation failed"),
-            @ApiResponse(responseCode = "409", description = "Conflict: Profile already exists")
+            @ApiResponse(responseCode = "400", description = "Invalid request data, validation failed, or missing Idempotency-Key"),
+            @ApiResponse(responseCode = "409", description = "Conflict: Profile already exists or Idempotency Key reused with different payload")
     })
     @PostMapping
-    public ResponseEntity<EntityModel<PlayerProfile>> createProfile(@Valid @RequestBody PlayerProfile newProfile) {
-        PlayerProfile savedProfile = repository.save(newProfile);
+    public ResponseEntity<?> createProfile(
+            @Parameter(description = "Required key used to make repeated create requests idempotent", required = true)
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @Valid @RequestBody PlayerProfile newProfile) {
 
-        EntityModel<PlayerProfile> entityModel = EntityModel.of(savedProfile,
-                linkTo(methodOn(PlayerProfileController.class).getProfileById(savedProfile.getId())).withSelfRel(),
-                linkTo(methodOn(PlayerProfileController.class).getAllProfiles(Pageable.unpaged())).withRel("player-profiles"));
+        // 1. Bloqueia ID 0 ou negativo (caso seja manual)
+        if (newProfile.getId() != null && newProfile.getId() <= 0) {
+            return ResponseEntity.badRequest().body("Profile ID must be greater than zero.");
+        }
 
-        return ResponseEntity
-                .created(URI.create("/api/player-profiles/" + savedProfile.getId()))
-                .body(entityModel);
+        // 2. Valida Header de Idempotência
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        // 3. Digital (Fingerprint). Usamos o ID do Player vinculado e a Biografia
+        Long playerId = newProfile.getPlayer() != null ? newProfile.getPlayer().getId() : null;
+        var requestFingerprint = new CreateProfileFingerprint(playerId, newProfile.getBiography());
+
+        // 4. Bloqueio Sincronizado
+        synchronized (createProfileIdempotencyLock) {
+            var storedResponse = createProfileResponses.get(idempotencyKey);
+
+            if (storedResponse != null) {
+                if (!storedResponse.requestFingerprint().equals(requestFingerprint)) {
+                    return ResponseEntity.status(HttpStatus.CONFLICT).build();
+                }
+
+                // Replay da resposta
+                return ResponseEntity.created(storedResponse.location())
+                        .body(storedResponse.entityModel());
+            }
+
+            // Impede sobrescrever um Profile que já existe
+            if (newProfile.getId() != null && repository.existsById(newProfile.getId())) {
+                return ResponseEntity.status(HttpStatus.CONFLICT).build();
+            }
+
+            // Persistência
+            PlayerProfile savedProfile = repository.save(newProfile);
+            URI location = URI.create("/api/player-profiles/" + savedProfile.getId());
+
+            EntityModel<PlayerProfile> entityModel = createEntityModel(savedProfile);
+
+            // Grava no Cache
+            createProfileResponses.put(idempotencyKey, new IdempotentCreateResponse(
+                    requestFingerprint,
+                    entityModel,
+                    location
+            ));
+
+            return ResponseEntity.created(location).body(entityModel);
+        }
     }
 
     @Operation(summary = "Update or Create a profile",
@@ -177,4 +228,8 @@ public class PlayerProfileController {
         // 5. Retorna 204 No Content
         return ResponseEntity.noContent().build();
     }
+
+    // --- RECORDS NO PADRÃO DO PROFESSOR ---
+    private record CreateProfileFingerprint(Long playerId, String biography) {}
+    private record IdempotentCreateResponse(CreateProfileFingerprint requestFingerprint, EntityModel<PlayerProfile> entityModel, URI location) {}
 }

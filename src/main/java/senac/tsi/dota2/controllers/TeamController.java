@@ -1,6 +1,7 @@
 package senac.tsi.dota2.controllers;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -19,6 +20,8 @@ import senac.tsi.dota2.exceptions.TeamNotFoundException;
 import senac.tsi.dota2.repositories.TeamRepository;
 
 import java.net.URI;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 // Importações estáticas mágicas do HATEOAS para criar os links dinamicamente
 import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.linkTo;
@@ -31,6 +34,10 @@ public class TeamController {
 
     private final TeamRepository repository;
     private final PagedResourcesAssembler<Team> pagedResourcesAssembler;
+
+    // --- VARIÁVEIS DE IDEMPOTÊNCIA ---
+    private final Map<String, IdempotentCreateResponse> createTeamResponses = new ConcurrentHashMap<>();
+    private final Object createTeamIdempotencyLock = new Object();
 
     public TeamController(TeamRepository repository, PagedResourcesAssembler<Team> pagedResourcesAssembler) {
         this.repository = repository;
@@ -95,24 +102,70 @@ public class TeamController {
         return ResponseEntity.ok(entityModel);
     }
 
+    // --- POST COM IDEMPOTÊNCIA ---
     @Operation(summary = "Create a new team",
             description = "Registers a new team into the API ecosystem.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Team created successfully"),
-            @ApiResponse(responseCode = "400", description = "Invalid request data or validation failed"),
-            @ApiResponse(responseCode = "409", description = "Conflict: Team already exists")
+            @ApiResponse(responseCode = "400", description = "Invalid request data, missing Idempotency-Key or validation failed"),
+            @ApiResponse(responseCode = "409", description = "Conflict: Team already exists or Idempotency Key reused with different payload")
     })
     @PostMapping
-    public ResponseEntity<EntityModel<Team>> createTeam(@Valid @RequestBody Team newTeam) {
-        Team savedTeam = repository.save(newTeam);
+    public ResponseEntity<?> createTeam(
+            @Parameter(description = "Required key used to make repeated create requests idempotent", required = true)
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @Valid @RequestBody Team newTeam) {
 
-        EntityModel<Team> entityModel = EntityModel.of(savedTeam,
-                linkTo(methodOn(TeamController.class).getTeamById(savedTeam.getId())).withSelfRel(),
-                linkTo(methodOn(TeamController.class).getAllTeams(Pageable.unpaged())).withRel("teams"));
+        // 1. Bloqueia ID 0 ou negativo
+        if (newTeam.getId() != null && newTeam.getId() <= 0) {
+            return ResponseEntity.badRequest().body("Team ID must be greater than zero.");
+        }
 
-        return ResponseEntity
-                .created(URI.create("/api/teams/" + savedTeam.getId()))
-                .body(entityModel);
+        // 2. Valida o Header de Idempotência
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return ResponseEntity.badRequest().build(); // Retorna 400 Bad Request
+        }
+
+        // 3. Cria a "digital" (fingerprint) usando o nome do time
+        var requestFingerprint = new CreateTeamFingerprint(newTeam.getName());
+
+        // 4. Bloqueio de concorrência com objeto dedicado
+        synchronized (createTeamIdempotencyLock) {
+            var storedResponse = createTeamResponses.get(idempotencyKey);
+
+            if (storedResponse != null) {
+                if (!storedResponse.requestFingerprint().equals(requestFingerprint)) {
+                    // Chave repetida com payload diferente
+                    return ResponseEntity.status(HttpStatus.CONFLICT).build();
+                }
+
+                // Replay da resposta original salva
+                return ResponseEntity.created(storedResponse.location())
+                        .body(storedResponse.entityModel());
+            }
+
+            // Impede sobrescrever um Time que já existe no banco (Prevenção de erro de Null ID incluída)
+            if (newTeam.getId() != null && repository.existsById(newTeam.getId())) {
+                return ResponseEntity.status(HttpStatus.CONFLICT).build();
+            }
+
+            // Persistência
+            Team savedTeam = repository.save(newTeam);
+            URI location = URI.create("/api/teams/" + savedTeam.getId());
+
+            EntityModel<Team> entityModel = EntityModel.of(savedTeam,
+                    linkTo(methodOn(TeamController.class).getTeamById(savedTeam.getId())).withSelfRel(),
+                    linkTo(methodOn(TeamController.class).getAllTeams(Pageable.unpaged())).withRel("teams"));
+
+            // Grava no cache
+            createTeamResponses.put(idempotencyKey, new IdempotentCreateResponse(
+                    requestFingerprint,
+                    entityModel,
+                    location
+            ));
+
+            return ResponseEntity.created(location).body(entityModel);
+        }
     }
 
     @Operation(summary = "Update or Create a team",
@@ -165,4 +218,8 @@ public class TeamController {
         repository.delete(team);
         return ResponseEntity.noContent().build();
     }
+
+    // --- RECORDS NO PADRÃO DO PROFESSOR ---
+    private record CreateTeamFingerprint(String name) {}
+    private record IdempotentCreateResponse(CreateTeamFingerprint requestFingerprint, EntityModel<Team> entityModel, URI location) {}
 }

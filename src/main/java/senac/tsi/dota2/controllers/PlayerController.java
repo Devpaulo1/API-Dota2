@@ -1,6 +1,7 @@
 package senac.tsi.dota2.controllers;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -19,6 +20,8 @@ import senac.tsi.dota2.exceptions.PlayerNotFoundException;
 import senac.tsi.dota2.repositories.PlayerRepository;
 
 import java.net.URI;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.linkTo;
 import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.methodOn;
@@ -30,6 +33,10 @@ public class PlayerController {
 
     private final PlayerRepository repository;
     private final PagedResourcesAssembler<Player> pagedResourcesAssembler;
+
+    // --- VARIÁVEIS DE IDEMPOTÊNCIA ---
+    private final Map<String, IdempotentCreateResponse> createPlayerResponses = new ConcurrentHashMap<>();
+    private final Object createPlayerIdempotencyLock = new Object();
 
     public PlayerController(PlayerRepository repository, PagedResourcesAssembler<Player> pagedResourcesAssembler) {
         this.repository = repository;
@@ -56,6 +63,7 @@ public class PlayerController {
 
         return ResponseEntity.ok(pagedModel);
     }
+
     @Operation(summary = "Filter by Nickname",
             description = "Filters players by searching for partial matches of their nickname.")
     @GetMapping("/filter/nickname")
@@ -92,24 +100,68 @@ public class PlayerController {
         return ResponseEntity.ok(entityModel);
     }
 
+    // --- POST COM IDEMPOTÊNCIA ---
     @Operation(summary = "Create a new player",
             description = "Registers a new player. A valid existing Team ID is mandatory to establish the link (One-to-Many relationship).")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Player created successfully"),
-            @ApiResponse(responseCode = "400", description = "Invalid request data or validation failed"),
-            @ApiResponse(responseCode = "409", description = "Conflict: Player already exists")
+            @ApiResponse(responseCode = "400", description = "Invalid request data, validation failed, or missing Idempotency-Key"),
+            @ApiResponse(responseCode = "409", description = "Conflict: Player already exists or Idempotency Key reused with different payload")
     })
     @PostMapping
-    public ResponseEntity<EntityModel<Player>> createPlayer(@Valid @RequestBody Player newPlayer) {
-        Player savedPlayer = repository.save(newPlayer);
+    public ResponseEntity<?> createPlayer(
+            @Parameter(description = "Required key used to make repeated create requests idempotent", required = true)
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @Valid @RequestBody Player newPlayer) {
 
-        EntityModel<Player> entityModel = EntityModel.of(savedPlayer,
-                linkTo(methodOn(PlayerController.class).getPlayerById(savedPlayer.getId())).withSelfRel(),
-                linkTo(methodOn(PlayerController.class).getAllPlayers(Pageable.unpaged())).withRel("players"));
+        // 1. Bloqueia ID 0 ou negativo
+        if (newPlayer.getId() != null && newPlayer.getId() <= 0) {
+            return ResponseEntity.badRequest().body("Player ID must be greater than zero.");
+        }
 
-        return ResponseEntity
-                .created(URI.create("/api/players/" + savedPlayer.getId()))
-                .body(entityModel);
+        // 2. Valida o Header de Idempotência
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return ResponseEntity.badRequest().build(); // Retorna 400 Bad Request
+        }
+
+        // 3. Cria a "digital" (fingerprint) usando o nickname do jogador
+        var requestFingerprint = new CreatePlayerFingerprint(newPlayer.getNickname());
+
+        // 4. Bloqueio de concorrência com objeto dedicado
+        synchronized (createPlayerIdempotencyLock) {
+            var storedResponse = createPlayerResponses.get(idempotencyKey);
+
+            if (storedResponse != null) {
+                if (!storedResponse.requestFingerprint().equals(requestFingerprint)) {
+                    // Chave repetida com payload diferente
+                    return ResponseEntity.status(HttpStatus.CONFLICT).build();
+                }
+
+                // Replay da resposta original salva
+                return ResponseEntity.created(storedResponse.location())
+                        .body(storedResponse.entityModel());
+            }
+
+            // Impede sobrescrever um Player que já existe no banco (Protegido contra ID null)
+            if (newPlayer.getId() != null && repository.existsById(newPlayer.getId())) {
+                return ResponseEntity.status(HttpStatus.CONFLICT).build();
+            }
+
+            // Persistência
+            Player savedPlayer = repository.save(newPlayer);
+            URI location = URI.create("/api/players/" + savedPlayer.getId());
+
+            EntityModel<Player> entityModel = createEntityModel(savedPlayer);
+
+            // Grava no cache
+            createPlayerResponses.put(idempotencyKey, new IdempotentCreateResponse(
+                    requestFingerprint,
+                    entityModel,
+                    location
+            ));
+
+            return ResponseEntity.created(location).body(entityModel);
+        }
     }
 
     @Operation(summary = "Update or Create a player",
@@ -148,12 +200,6 @@ public class PlayerController {
         }
     }
 
-    private EntityModel<Player> createEntityModel(Player player) {
-        return EntityModel.of(player,
-                linkTo(methodOn(PlayerController.class).getPlayerById(player.getId())).withSelfRel(),
-                linkTo(methodOn(PlayerController.class).getAllPlayers(Pageable.unpaged())).withRel("players"));
-    }
-
     @Operation(summary = "Delete a player",
             description = "Removes the player record from the system.")
     @ApiResponses(value = {
@@ -167,4 +213,15 @@ public class PlayerController {
         repository.delete(player);
         return ResponseEntity.noContent().build();
     }
+
+    // Método auxiliar (HATEOAS)
+    private EntityModel<Player> createEntityModel(Player player) {
+        return EntityModel.of(player,
+                linkTo(methodOn(PlayerController.class).getPlayerById(player.getId())).withSelfRel(),
+                linkTo(methodOn(PlayerController.class).getAllPlayers(Pageable.unpaged())).withRel("players"));
+    }
+
+    // --- RECORDS NO PADRÃO DO PROFESSOR ---
+    private record CreatePlayerFingerprint(String nickname) {}
+    private record IdempotentCreateResponse(CreatePlayerFingerprint requestFingerprint, EntityModel<Player> entityModel, URI location) {}
 }
