@@ -1,6 +1,7 @@
 package senac.tsi.dota2.controllers;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -19,6 +20,8 @@ import senac.tsi.dota2.exceptions.ItemNotFoundException;
 import senac.tsi.dota2.repositories.ItemRepository;
 
 import java.net.URI;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.linkTo;
 import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.methodOn;
@@ -31,6 +34,8 @@ public class ItemController {
 
     private final ItemRepository repository;
     private final PagedResourcesAssembler<Item> pagedResourcesAssembler;
+    private final Map<String, IdempotentCreateResponse> createItemResponses = new ConcurrentHashMap<>();
+    private final Object createItemIdempotencyLock = new Object();
 
     public ItemController(ItemRepository repository, PagedResourcesAssembler<Item> pagedResourcesAssembler) {
         this.repository = repository;
@@ -74,19 +79,68 @@ public class ItemController {
         return ResponseEntity.ok(createEntityModel(item));
     }
 
+    // --- POST COM IDEMPOTÊNCIA ---
     @Operation(summary = "Create a new item",
             description = "Adds a new equipment or consumable to the global database. Independent entity.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Item created successfully"),
-            @ApiResponse(responseCode = "400", description = "Invalid request data or validation failed"),
-            @ApiResponse(responseCode = "409", description = "Conflict: Item already exists")
+            @ApiResponse(responseCode = "400", description = "Invalid request data or missing Idempotency-Key"),
+            @ApiResponse(responseCode = "409", description = "Conflict: Item already exists or Idempotency Key reused with different payload")
     })
     @PostMapping
-    public ResponseEntity<EntityModel<Item>> createItem(@Valid @RequestBody Item newItem) {
-        Item savedItem = repository.save(newItem);
-        return ResponseEntity
-                .created(URI.create("/api/items/" + savedItem.getId()))
-                .body(createEntityModel(savedItem));
+    public ResponseEntity<?> createItem(
+            @Parameter(description = "Required key used to make repeated create requests idempotent", required = true)
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @Valid @RequestBody Item newItem) {
+
+        // 1. Bloqueia ID 0 ou negativo
+        if (newItem.getId() != null && newItem.getId() <= 0) {
+            return ResponseEntity.badRequest().body("Item ID must be greater than zero.");
+        }
+
+        // 2. Valida o Header de Idempotência
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        // 3. Cria a "digital" (fingerprint) do Item.
+        var requestFingerprint = new CreateItemFingerprint(newItem.getName());
+
+        // 4. Bloqueio de concorrência com objeto dedicado
+        synchronized (createItemIdempotencyLock) {
+            var storedResponse = createItemResponses.get(idempotencyKey);
+
+            if (storedResponse != null) {
+                if (!storedResponse.requestFingerprint().equals(requestFingerprint)) {
+                    // Chave repetida com payload diferente
+                    return ResponseEntity.status(HttpStatus.CONFLICT).build();
+                }
+
+                // Replay da resposta original salva
+                return ResponseEntity.created(storedResponse.location())
+                        .body(storedResponse.entityModel());
+            }
+
+            // CORREÇÃO AQUI: Só verifica se existe no banco caso o usuário tenha enviado um ID!
+            if (newItem.getId() != null && repository.existsById(newItem.getId())) {
+                return ResponseEntity.status(HttpStatus.CONFLICT).build();
+            }
+
+            // Persistência
+            Item savedItem = repository.save(newItem);
+            URI location = URI.create("/api/items/" + savedItem.getId());
+
+            EntityModel<Item> entityModel = createEntityModel(savedItem);
+
+            // Grava no cache
+            createItemResponses.put(idempotencyKey, new IdempotentCreateResponse(
+                    requestFingerprint,
+                    entityModel,
+                    location
+            ));
+
+            return ResponseEntity.created(location).body(entityModel);
+        }
     }
 
     @Operation(summary = "Update or Create an item",
@@ -143,4 +197,8 @@ public class ItemController {
                 linkTo(methodOn(ItemController.class).getItemById(item.getId())).withSelfRel(),
                 linkTo(methodOn(ItemController.class).getAllItems(Pageable.unpaged())).withRel("items"));
     }
+
+    // --- RECORDS NO PADRÃO DO PROFESSOR ---
+    private record CreateItemFingerprint(String name) {}
+    private record IdempotentCreateResponse(CreateItemFingerprint requestFingerprint, EntityModel<Item> entityModel, URI location) {}
 }
