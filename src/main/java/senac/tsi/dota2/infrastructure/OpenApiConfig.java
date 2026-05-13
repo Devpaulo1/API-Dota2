@@ -1,9 +1,13 @@
 package senac.tsi.dota2.infrastructure;
 
 import io.swagger.v3.oas.annotations.OpenAPIDefinition;
+import io.swagger.v3.oas.annotations.enums.SecuritySchemeIn;
+import io.swagger.v3.oas.annotations.enums.SecuritySchemeType;
 import io.swagger.v3.oas.annotations.info.Contact;
 import io.swagger.v3.oas.annotations.info.Info;
 import io.swagger.v3.oas.annotations.info.License;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.security.SecurityScheme;
 import io.swagger.v3.oas.annotations.servers.Server;
 import org.springframework.context.annotation.Configuration;
 
@@ -57,19 +61,17 @@ import org.springframework.context.annotation.Configuration;
                 
                 Para elevar a segurança e a resiliência da aplicação, foram integrados padrões avançados de mercado:
                 
-                - **Idempotência:** Para proteger o banco de dados contra duplicidades causadas por falhas de rede ou "cliques duplos" (Double Submit), rotas de criação (`POST`) utilizam validação de estado. Ao enviar o cabeçalho `Idempotency-Key`, a API garante que uma mesma carga de dados seja processada de forma segura, retornando o resultado original caso a mesma chave seja reutilizada (Replay), ou barrando a requisição com um erro **409 Conflict** em caso de mudança de dados.
+                - **Autenticação (API Key):** Toda a API está protegida por uma camada de segurança baseada em Chave de API. É obrigatório o envio do cabeçalho `X-API-KEY` com a credencial válida para realizar qualquer operação nos endpoints, garantindo que apenas clientes autorizados consumam os dados (Retorna erro 401 Unauthorized caso contrário).
                 
-                - **Rate Limiting:** A API possui uma camada global de proteção contra abusos e sobrecargas baseada no algoritmo Token Bucket (via Bucket4j). A taxa de requisições é isolada **por IP/Cliente**. Ao exceder o limite estabelecido, a API bloqueia o acesso imediatamente com o status **429 (Too Many Requests)**, fornecendo o cabeçalho oficial `Retry-After` com o tempo dinâmico exato (em segundos) restante para a próxima janela de requisições.
+                - **Idempotência:** Para proteger o banco de dados contra duplicidades causadas por falhas de rede ou "cliques duplos" (Double Submit), rotas de criação (`POST`) utilizam validação de estado. Ao enviar o cabeçalho `Idempotency-Key`, a API garante que uma mesma carga de dados seja processada de forma segura.
                 
-                - **Versionamento de API:** Para garantir compatibilidade com múltiplos clientes e aderência ao Nível 3 de Richardson, a API implementa Versionamento via Cabeçalho (Header Versioning). O cliente pode selecionar o formato da resposta desejado utilizando o cabeçalho `X-API-VERSION`, permitindo a evolução segura dos contratos da API sem alterar os URIs (ex: rota `/api/system/info`).
+                - **Rate Limiting:** A API possui uma camada global de proteção contra abusos baseada no algoritmo Token Bucket. A taxa é isolada por IP, retornando o status **429 (Too Many Requests)** e o cabeçalho dinâmico `Retry-After` caso o limite seja excedido.
+                
+                - **Versionamento de API:** A API implementa Versionamento via Cabeçalho (Header Versioning). O cliente pode selecionar o formato da resposta desejado utilizando o cabeçalho `X-API-VERSION`.
                             
                             Deploy e Ambientes:
                 
-                A aplicação foi disponibilizada em um ambiente real de execução, utilizando a plataforma Render (PaaS). Com isso, é possível acessar a API publicamente, facilitando testes, validações e demonstrações do funcionamento fora do ambiente local.
-                
-                A utilização de uma plataforma em nuvem também contribui para simular um cenário mais próximo do mercado, garantindo maior confiabilidade, disponibilidade e facilidade no processo de deploy.
-                
-                Este projeto foi desenvolvido como parte dos requisitos acadêmicos do curso de Tecnologia em Sistemas para Internet (TSI) do Senac, aplicando na prática conceitos de desenvolvimento backend, arquitetura de APIs e boas práticas de engenharia de software.
+                A aplicação foi disponibilizada em um ambiente real de execução, utilizando a plataforma Render (PaaS).
                 
                 """,
                 contact = @Contact(
@@ -84,8 +86,15 @@ import org.springframework.context.annotation.Configuration;
         servers = {
                 @Server(url = "http://localhost:8080", description = "Servidor Local (Desenvolvimento)"),
                 @Server(url = "https://api-dota2.onrender.com", description = "Servidor de Produção (Render)")
-        }
+        },
+        security = @SecurityRequirement(name = "ApiKeyAuth") // <--- EXIGE O CADEADO GLOBALMENTE
 )
-
+@SecurityScheme( // <--- CONFIGURA COMO O CADEADO FUNCIONA
+        name = "ApiKeyAuth",
+        description = "Insira a chave secreta da API para liberar os endpoints.",
+        type = SecuritySchemeType.APIKEY,
+        in = SecuritySchemeIn.HEADER,
+        paramName = "X-API-KEY"
+)
 public class OpenApiConfig {
 }
