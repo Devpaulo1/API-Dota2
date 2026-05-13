@@ -19,26 +19,36 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 public class RateLimitingFilter extends OncePerRequestFilter {
 
-    // 1. BLINDAGEM 1: O 'static' impede mapas duplicados e mata a Condição de Corrida.
     private static final Map<String, Bucket> cache = new ConcurrentHashMap<>();
 
     private Bucket createNewBucket() {
-        // 2. BLINDAGEM 2: Trocamos 'intervally' por 'greedy' para a recarga ser suave e o cronômetro ficar exato.
         Bandwidth limit = Bandwidth.classic(20, Refill.greedy(2, Duration.ofMinutes(1)));
         return Bucket.builder().addLimit(limit).build();
+    }
+
+    // --- NOVO MÉTODO: Pega o IP real por trás do Load Balancer da Nuvem ---
+    private String getClientIP(HttpServletRequest request) {
+        String xForwardedForHeader = request.getHeader("X-Forwarded-For");
+        if (xForwardedForHeader == null || xForwardedForHeader.isEmpty() || "unknown".equalsIgnoreCase(xForwardedForHeader)) {
+            // Se for localhost (não tem proxy), cai aqui
+            return request.getRemoteAddr();
+        }
+        // Na nuvem, o cabeçalho pode trazer vários IPs separados por vírgula. O primeiro é sempre o do cliente.
+        return xForwardedForHeader.split(",")[0].trim();
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
 
-        // 3. BLINDAGEM 3: Ignora o preflight (OPTIONS) do Swagger/Navegador para não roubar fichas invisíveis.
         if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        String ip = request.getRemoteAddr();
+        // --- AQUI ESTÁ A MÁGICA: Substituímos o getRemoteAddr() pelo nosso novo método ---
+        String ip = getClientIP(request);
+
         Bucket bucket = cache.computeIfAbsent(ip, k -> createNewBucket());
 
         ConsumptionProbe probe = bucket.tryConsumeAndReturnRemaining(1);
